@@ -1,0 +1,13 @@
+FROM golang:1.11-alpine3.8 AS build
+WORKDIR /go/src/github.com/jacobstr/kostanza
+
+# Build indepdently for caching purposes.
+ADD vendor vendor
+RUN go build -i ./vendor/...
+# Build our binaries.
+ADD . .
+RUN go install ./...
+
+FROM alpine:3.8
+RUN apk update && apk add ca-certificates
+COPY --from=build /go/bin/kostanza /usr/local/bin/kostanza

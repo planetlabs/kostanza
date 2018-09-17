@@ -1,0 +1,31 @@
+language: go
+
+services:
+  - docker
+
+go:
+  - 1.11.x
+
+jobs:
+  include:
+    - stage: test
+      before_install:
+        - go get -u github.com/alecthomas/gometalinter
+      install:
+         - gometalinter --install
+      script:
+        - go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+      after_success:
+        - bash <(curl -s https://codecov.io/bash)
+
+    - stage: publish
+      install: skip
+      script:
+        - docker build -t jacobstr/kostanza:${TRAVIS_COMMIT:0:7} .
+        - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+        - docker push jacobstr/kostanza:${TRAVIS_COMMIT:0:7}
+
+stages:
+  - name: test
+  - name: publish
+    if: branch = master and not type = pull_request
