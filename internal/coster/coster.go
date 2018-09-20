@@ -3,6 +3,7 @@ package coster
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -233,6 +234,12 @@ func (c *coster) Run(ctx context.Context) error {
 
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", c.exporter)
+		mux.Handle("/healthz", http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				defer r.Body.Close()
+				fmt.Fprintf(w, "ok")
+			},
+		))
 
 		s := http.Server{
 			Addr:    c.listenAddr,
