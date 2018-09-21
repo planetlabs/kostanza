@@ -245,7 +245,7 @@ func (c *coster) Run(ctx context.Context) error {
 			Addr:    c.listenAddr,
 			Handler: mux,
 		}
-		log.Log.Info("starting server on %s", c.listenAddr)
+		log.Log.Infof("starting server on %s", c.listenAddr)
 
 		go func() {
 			<-ctx.Done()
