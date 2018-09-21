@@ -14,7 +14,7 @@ import (
 	"github.com/jacobstr/kostanza/internal/lister"
 )
 
-var resourceTestPod core_v1.Pod = core_v1.Pod{
+var resourceTestPod = core_v1.Pod{
 	Spec: core_v1.PodSpec{
 		Containers: []core_v1.Container{
 			core_v1.Container{
@@ -98,7 +98,7 @@ var calculateTestNodeLabels = map[string]string{
 	"test": "test",
 }
 
-var testCalculationPod *core_v1.Pod = &core_v1.Pod{
+var testCalculationPod = &core_v1.Pod{
 	Spec: core_v1.PodSpec{
 		NodeName: calculateTestNodeName,
 		Containers: []core_v1.Container{
@@ -113,7 +113,7 @@ var testCalculationPod *core_v1.Pod = &core_v1.Pod{
 	},
 }
 
-var testCalculationNode *core_v1.Node = &core_v1.Node{
+var testCalculationNode = &core_v1.Node{
 	ObjectMeta: metav1.ObjectMeta{
 		Name:   calculateTestNodeName,
 		Labels: calculateTestNodeLabels,

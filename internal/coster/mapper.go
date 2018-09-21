@@ -8,13 +8,8 @@ import (
 	"k8s.io/client-go/util/jsonpath"
 )
 
-type SourceField string
-
-var (
-	SourceFieldAnnotations = SourceField("annotations")
-	SourceFieldLabels      = SourceField("labels")
-)
-
+// Mapping models how to map a destination field from a source field within
+// a  kubernetes resource. The source is typically a jsonPath expression.
 type Mapping struct {
 	Default     string
 	Destination string

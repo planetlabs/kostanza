@@ -17,7 +17,7 @@ import (
 	"github.com/jacobstr/kostanza/internal/log"
 )
 
-const Name = "kostanza"
+const name = "kostanza"
 
 var (
 	app        = kingpin.New("kostanza", "A Kubernetes component to emit cost metrics for services.")
@@ -61,7 +61,7 @@ func main() {
 		cf, err := coster.NewConfigFromReader(*config)
 		kingpin.FatalIfError(err, "cannot read configuration data")
 
-		p, err := prometheus.NewExporter(prometheus.Options{Namespace: Name})
+		p, err := prometheus.NewExporter(prometheus.Options{Namespace: name})
 		kingpin.FatalIfError(err, "cannot export metrics")
 
 		mk, err := cf.Mapper.TagKeys()
@@ -73,7 +73,8 @@ func main() {
 
 		coster, err := coster.NewKubernetesCoster(*interval, cf, cs, p, *listenAddr)
 		kingpin.FatalIfError(err, "cannot create coster")
-		coster.Run(context.Background())
+
+		kingpin.FatalIfError(coster.Run(context.Background()), "exited with error")
 	}
 }
 

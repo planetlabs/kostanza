@@ -6,23 +6,23 @@ import (
 )
 
 var (
-	singleLabelCostTableEntry CostTableEntry = CostTableEntry{
+	singleLabelCostTableEntry = CostTableEntry{
 		Labels: Labels{"beta.kubernetes.io/instance-type": "n1-standard-16"},
 	}
-	regionZoneAndInstanceTypeCostTableEntry CostTableEntry = CostTableEntry{
+	regionZoneAndInstanceTypeCostTableEntry = CostTableEntry{
 		Labels: Labels{
 			"beta.kubernetes.io/instance-type":         "n1-standard-16",
 			"failure-domain.beta.kubernetes.io/region": "us-central1",
 			"failure-domain.beta.kubernetes.io/zone":   "us-central1-b",
 		},
 	}
-	regionAndInstanceTypeCostTableEntry CostTableEntry = CostTableEntry{
+	regionAndInstanceTypeCostTableEntry = CostTableEntry{
 		Labels: Labels{
 			"beta.kubernetes.io/instance-type":         "n1-standard-16",
 			"failure-domain.beta.kubernetes.io/region": "us-central1",
 		},
 	}
-	fallbackCostTableEntry CostTableEntry = CostTableEntry{
+	fallbackCostTableEntry = CostTableEntry{
 		Labels: Labels{},
 	}
 )

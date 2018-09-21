@@ -14,12 +14,21 @@ import (
 	"github.com/jacobstr/kostanza/internal/log"
 )
 
+var _ PodLister = (*kubernetesPodLister)(nil)
+var _ PodLister = (*FakePodLister)(nil)
+
+// PodLister lists pods in a kubernetes cluster. The canonical implementation
+// uses the kubernetes informer mechanism, which is expected to be started via a
+// call to the Run method. Prior to this, a concrete implementation will
+// generally not succesfully return pods.
 type PodLister interface {
 	List(selector labels.Selector) ([]*core_v1.Pod, error)
 	Run(stopCh <-chan struct{}) error
 }
 
-func NewKubernetesPodLister(client kubernetes.Interface) *kubernetesPodLister {
+// NewKubernetesPodLister returns a PodLister that provides simplified listing
+// of pods via the underlying client-go SharedInformer APIs
+func NewKubernetesPodLister(client kubernetes.Interface) *kubernetesPodLister { // nolint: golint
 	informerFactory := informers.NewSharedInformerFactory(client, time.Second)
 	pi := informerFactory.Core().V1().Pods()
 	pl := pi.Lister()
@@ -49,17 +58,18 @@ func (k *kubernetesPodLister) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
+// FakePodLister provides a mock PodLister implementation.
 type FakePodLister struct {
 	Pods []*core_v1.Pod
 }
 
+// List returns the list of pods provided to the FakePodLister.
 func (l *FakePodLister) List(selector labels.Selector) ([]*core_v1.Pod, error) {
 	return l.Pods, nil
 }
 
+// Run mimics the run loop of a concrete PodLister.
 func (l *FakePodLister) Run(stopCh <-chan struct{}) error {
-	select {
-	case <-stopCh:
-		return nil
-	}
+	<-stopCh
+	return nil
 }

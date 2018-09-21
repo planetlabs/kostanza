@@ -14,7 +14,7 @@ type mapperTestStruct struct {
 	Metadata mapperTestMetadata
 }
 
-var testStruct mapperTestStruct = mapperTestStruct{
+var testStruct = mapperTestStruct{
 	Metadata: mapperTestMetadata{
 		Labels: map[string]string{
 			"service": "svc-via-label",

@@ -22,15 +22,13 @@ import (
 	"github.com/jacobstr/kostanza/internal/log"
 )
 
-const (
-	UnknownService   = "unknown"
-	UnknownComponent = "unknown"
-)
-
+// ResourceCostKind is used to indidicate what resource a cost was derived from.
 type ResourceCostKind string
 
 var (
-	ResourceCostCPU    = ResourceCostKind("cpu")
+	// ResourceCostCPU is a cost metric derived from CPU utilization.
+	ResourceCostCPU = ResourceCostKind("cpu")
+	// ResourceCostMemory is a cost metric derived from memory utilization.
 	ResourceCostMemory = ResourceCostKind("memory")
 )
 
@@ -48,11 +46,17 @@ var (
 	TagKind, _ = tag.NewKey("kind")
 )
 
+// Coster is used to calculate and emit metrics for services and components
+// running in a kubernetes cluster.
 type Coster interface {
 	CalculateAndEmit() error
 	Run(ctx context.Context) error
 }
 
+// Config contains the configuration data necessary to drive the
+// kubernetesCoster. It includes both mapping information to teach it how to
+// derive metric dimensions from pod labels, as well as as a pricing table to
+// instruct it how expensive nodes are.
 type Config struct {
 	Mapper  Mapper
 	Pricing CostTable
@@ -60,7 +64,7 @@ type Config struct {
 
 // NewKubernetesCoster returns a new coster that talks to a kubernetes cluster
 // via the provided client.
-func NewKubernetesCoster(interval time.Duration, config *Config, client kubernetes.Interface, exporter *prometheus.Exporter, listenAddr string) (*coster, error) {
+func NewKubernetesCoster(interval time.Duration, config *Config, client kubernetes.Interface, exporter *prometheus.Exporter, listenAddr string) (*coster, error) { // nolint: golint
 	podLister := lister.NewKubernetesPodLister(client)
 	nodeLister := lister.NewKubernetesNodeLister(client)
 
@@ -236,8 +240,8 @@ func (c *coster) Run(ctx context.Context) error {
 		mux.Handle("/metrics", c.exporter)
 		mux.Handle("/healthz", http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
-				defer r.Body.Close()
-				fmt.Fprintf(w, "ok")
+				defer r.Body.Close() // nolint: errcheck
+				fmt.Fprintf(w, "ok") // nolint: errcheck
 			},
 		))
 
@@ -249,7 +253,7 @@ func (c *coster) Run(ctx context.Context) error {
 
 		go func() {
 			<-ctx.Done()
-			s.Shutdown(ctx)
+			s.Shutdown(ctx) // nolint: gosec, errcheck
 		}()
 
 		err := s.ListenAndServe()
@@ -269,7 +273,9 @@ func (c *coster) Run(ctx context.Context) error {
 		for {
 			select {
 			case <-c.ticker.C:
-				c.CalculateAndEmit()
+				if err := c.CalculateAndEmit(); err != nil {
+					log.Log.Errorw("error during cost calculation cycle", zap.Error(err))
+				}
 			case <-ctx.Done():
 				return nil
 			}
