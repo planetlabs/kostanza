@@ -1,10 +1,10 @@
 package coster
 
 import (
-	"reflect"
 	"testing"
 	"time"
 
+	"github.com/go-test/deep"
 	"go.opencensus.io/exporter/prometheus"
 	core_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -125,7 +125,7 @@ var calculcateCases = []struct {
 	pods              []*core_v1.Pod
 	nodes             []*core_v1.Node
 	config            *Config
-	expectedCostItems []podCostItem
+	expectedCostItems []CostItem
 }{
 	{
 		name:  "single container pod on a node using half it's cpu",
@@ -136,18 +136,18 @@ var calculcateCases = []struct {
 				Entries: []*CostTableEntry{
 					&CostTableEntry{
 						Labels:               calculateTestNodeLabels,
-						TotalMilliCPU:        1000,
-						TotalMemoryBytes:     1024,
 						HourlyCostMicroCents: 1000000,
 					},
 				},
 			},
 		},
-		expectedCostItems: []podCostItem{
-			podCostItem{
-				value: 500000,
-				kind:  ResourceCostCPU,
-				pod:   testCalculationPod,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    1000000,
+				Kind:     ResourceCostCPU,
+				Pod:      testCalculationPod,
+				Node:     testCalculationNode,
+				Strategy: StrategyNameCPU,
 			},
 		},
 	},
@@ -171,6 +171,7 @@ func TestCalculate(t *testing.T) {
 				nodeLister: &nodl,
 				podLister:  &podl,
 				config:     tt.config,
+				strategies: []PricingStrategy{CPUPricingStrategy},
 			}
 
 			ci, err := c.calculate()
@@ -178,8 +179,8 @@ func TestCalculate(t *testing.T) {
 				t.Fatalf("unexpected error calculation costs: %v", err)
 			}
 
-			if !reflect.DeepEqual(ci, tt.expectedCostItems) {
-				t.Fatalf("wanted cost items %#v, got %#v", tt.expectedCostItems, ci)
+			if diff := deep.Equal(ci, tt.expectedCostItems); diff != nil {
+				t.Fatal(diff)
 			}
 		})
 	}

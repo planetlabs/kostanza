@@ -37,7 +37,7 @@ var (
 		Measure:     coster.MeasureCost,
 		Description: "Cost of services in millionths of a cent.",
 		Aggregation: view.Sum(),
-		TagKeys:     []tag.Key{coster.TagKind},
+		TagKeys:     []tag.Key{},
 	}
 )
 

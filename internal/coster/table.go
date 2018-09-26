@@ -28,8 +28,6 @@ func (l Labels) Match(key, value string) bool {
 // identify nodes.
 type CostTableEntry struct {
 	Labels               Labels
-	TotalMilliCPU        int64
-	TotalMemoryBytes     int64
 	HourlyCostMicroCents int64
 }
 
@@ -59,16 +57,16 @@ func (e *CostTableEntry) Match(labels Labels) bool {
 	return true
 }
 
-// CPUCostMicroCents returns the cost of the provided millicpu over a given duration in millionths of a cent.
-func (e *CostTableEntry) CPUCostMicroCents(mcpu int64, duration time.Duration) int64 {
-	cpufrac := float64(mcpu) / float64(e.TotalMilliCPU)
+// CPUCostMicroCents returns the cost of the provided fraction of total node cpu
+// over a given duration in millionths of a cent.
+func (e *CostTableEntry) CPUCostMicroCents(cpufrac float64, duration time.Duration) int64 {
 	durfrac := float64(duration) / float64(time.Hour)
 	return int64(cpufrac * durfrac * float64(e.HourlyCostMicroCents))
 }
 
-// MemoryCostMicroCents returns the cost of the provided memory over a given duration in millionths of a cent.
-func (e *CostTableEntry) MemoryCostMicroCents(mib int64, duration time.Duration) int64 {
-	memfrac := float64(mib) / float64(e.TotalMemoryBytes)
+// MemoryCostMicroCents returns the cost of the provided fraction of total node
+// memory over a given duration in millionths of a cent.
+func (e *CostTableEntry) MemoryCostMicroCents(memfrac float64, duration time.Duration) int64 {
 	durfrac := float64(duration) / float64(time.Hour)
 	return int64(memfrac * durfrac * float64(e.HourlyCostMicroCents))
 }
