@@ -13,6 +13,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
+const nodeResyncPeriod = time.Minute * 15
+
 var _ NodeLister = (*kubernetesNodeLister)(nil)
 var _ NodeLister = (*FakeNodeLister)(nil)
 
@@ -28,7 +30,7 @@ type NodeLister interface {
 // NewKubernetesNodeLister returns a NodeLister that provides simplified
 // listing of nodes via the underlying client-go SharedInformer APIs
 func NewKubernetesNodeLister(client kubernetes.Interface) *kubernetesNodeLister { // nolint: golint
-	informerFactory := informers.NewSharedInformerFactory(client, time.Second)
+	informerFactory := informers.NewSharedInformerFactory(client, nodeResyncPeriod)
 	ni := informerFactory.Core().V1().Nodes()
 	nl := ni.Lister()
 
