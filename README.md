@@ -39,13 +39,14 @@ table from specific to general.
 Kostanza does not make assumptions about the dimensions you want to use for
 the cost metrics it emits. It allows you to map these from resource labels
 and annotations. For example, organizations that use the label `service` may
-wish to use the jsonPath expression `{.ObjectMeta.Labels.service}`.
+wish to use the jsonPath expression `{.Pod.ObjectMeta.Labels.service}`.
 
 It's important to set to a default value since prometheus, the canonical
 (and to date, only) exporter will complain about the cardinality of metrics
 when a key is left empty.
 
-> Note: the property names are based on kubernetes client-go, see
+> Note: the property names are based on the CostItem struct contained
+> within the package, which references kubernetes client-go, see
 > https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/types.go
 
 ```json
@@ -56,16 +57,12 @@ when a key is left empty.
         "Labels": {
           "beta.kubernetes.io/instance-type": "n1-standard-16"
         },
-        "TotalMilliCPU": 15750,
-        "TotalMemoryBytes": 62950191104,
         "HourlyCostMicroCents": 400000000
       },
       {
         "Labels": {
           "kubernetes.io/hostname": "minikube"
         },
-        "TotalMilliCPU": 2000,
-        "TotalMemoryBytes": 1982693376,
         "HourlyCostMicroCents": 10000000
       }
     ]
@@ -74,15 +71,68 @@ when a key is left empty.
     "Entries": [
       {
         "Destination": "service",
-        "Source": "{.ObjectMeta.Labels.service}",
+        "Source": "{.Pod.ObjectMeta.Labels.service}",
         "Default": "unknown"
       },
       {
         "Destination": "component",
-        "Source": "{.ObjectMeta.Labels.component}",
+        "Source": "{.Pod.ObjectMeta.Labels.component}",
+        "Default": "unknown"
+      },
+      {
+        "Destination": "node_instance_type",
+        "Source": "{.Node.ObjectMeta.Labels['beta.kubernetes.io/instance-type']}",
+        "Default": "unknown"
+      }
+      {
+        "Destination": "kind",
+        "Source": "{.Kind}",
+        "Default": "unknown"
+      },
+      {
+        "Destination": "strategy",
+        "Source": "{.Strategy}",
         "Default": "unknown"
       }
     ]
   }
 }
 ```
+
+## Strategies
+
+Kostanza currently emits metrics according to two strategies by default:
+
+- WeightedPricingStrategy
+- NodePricingStrategy
+
+### WeightedPricingStrategy
+
+The `WeightedPricingStrategy` strategy operates as follows:
+
+- First, add up all cpu and memory resource requests on all nodes.
+- Next, for each pod, determine the fraction of memory and cpu it has
+  requested on its respective node. The pod's cost is based on the average
+  of these two fractions.
+
+This strategy does punish pods for being scheduled to fresh nodes - the
+choice is deliberate and is intended to capture costs incurred by services
+that may trigger frequent scale ups without having a chance to benefit from
+bin-packing additional pods.
+
+### NodePricingStrategy
+
+The `NodePricingStrategy` is intended to emit baseline cost metrics for your
+nodes, i.e. to provide a total cost for your cluster. This can be useful in
+visualizations where one wishes to graph pod costs as a fraction of total
+cost. The mapping configuration presented earlier provides an example of how
+one might configure your mapper based on nascent standardized labels (e.g.
+`beta.kubernetes.io/instance-type`).
+
+### Metric Dimensions
+
+All strategies share the same metrics and metric dimensions. This means, for example,
+that the `NodePricingStrategy` is likely to emit defaults for metrics only relevant
+to pods. This is a deliberate design choice at the moment - rather than having multiple
+measures or metrics, we have a single metric containing a superset of cost dimensions
+whether they apply to a particular strategy or not.

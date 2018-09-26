@@ -14,6 +14,8 @@ import (
 	"github.com/jacobstr/kostanza/internal/log"
 )
 
+const podResyncPeriod = time.Minute * 15
+
 var _ PodLister = (*kubernetesPodLister)(nil)
 var _ PodLister = (*FakePodLister)(nil)
 
@@ -29,7 +31,7 @@ type PodLister interface {
 // NewKubernetesPodLister returns a PodLister that provides simplified listing
 // of pods via the underlying client-go SharedInformer APIs
 func NewKubernetesPodLister(client kubernetes.Interface) *kubernetesPodLister { // nolint: golint
-	informerFactory := informers.NewSharedInformerFactory(client, time.Second)
+	informerFactory := informers.NewSharedInformerFactory(client, podResyncPeriod)
 	pi := informerFactory.Core().V1().Pods()
 	pl := pi.Lister()
 

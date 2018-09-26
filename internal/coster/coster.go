@@ -11,10 +11,8 @@ import (
 	"github.com/pkg/errors"
 	"go.opencensus.io/exporter/prometheus"
 	"go.opencensus.io/stats"
-	"go.opencensus.io/tag"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
-	core_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 
@@ -30,6 +28,10 @@ var (
 	ResourceCostCPU = ResourceCostKind("cpu")
 	// ResourceCostMemory is a cost metric derived from memory utilization.
 	ResourceCostMemory = ResourceCostKind("memory")
+	// ResourceCostWeighted is a cost metric derived from a weighted average of memory and cpu utilization.
+	ResourceCostWeighted = ResourceCostKind("weighted")
+	// ResourceCostNode represents the overall cost of a node.
+	ResourceCostNode = ResourceCostKind("node")
 )
 
 var (
@@ -41,9 +43,6 @@ var (
 var (
 	// MeasureCost is the stat for tracking costs in millionths of a cent.
 	MeasureCost = stats.Int64("kostanza/measures/cost", "Cost in millionths of a cent", "µ¢")
-
-	// TagKind is kind of cost, for example: cpu, memory, network-egress.
-	TagKind, _ = tag.NewKey("kind")
 )
 
 // Coster is used to calculate and emit metrics for services and components
@@ -80,6 +79,7 @@ func NewKubernetesCoster(interval time.Duration, config *Config, client kubernet
 		config:     config,
 		exporter:   exporter,
 		listenAddr: listenAddr,
+		strategies: []PricingStrategy{WeightedPricingStrategy, NodePricingStrategy},
 	}, nil
 }
 
@@ -90,74 +90,13 @@ type coster struct {
 	nodeLister lister.NodeLister
 	config     *Config
 	exporter   *prometheus.Exporter
+	strategies []PricingStrategy
 	listenAddr string
-}
-
-// podCostItem models cost metadata for a pod.
-type podCostItem struct {
-	// The kind of cost figure represented.
-	kind ResourceCostKind
-	// The value in microcents that it costs.
-	value int64
-	// Kubernetes pod metadata associated with the pod.
-	pod *core_v1.Pod
-}
-
-// sumPodResource calculates the total resource requests of `kind` for all
-// containers within a given Pod. The meaning of the value returned depends on
-// the kind chosen:
-// 	- cpu: The number of millicpus. 1 cpu is 1000.
-//  - memory: The number of bytes.
-func sumPodResource(p *core_v1.Pod, kind core_v1.ResourceName) int64 {
-	total := int64(0)
-	for _, c := range p.Spec.Containers {
-		res, ok := c.Resources.Requests[kind]
-		if ok {
-			total = total + (&res).MilliValue()
-		}
-	}
-
-	// The millivalue for memory is given in thousandths of bytes, which is a goofy
-	// number for anyone calling this function.
-	if kind == "memory" {
-		return total / 1000
-	}
-	return total
-}
-
-func costItemForPod(pod *core_v1.Pod, pricing *CostTable, interval time.Duration, nodeMap map[string]*core_v1.Node) (*podCostItem, error) {
-	c := sumPodResource(pod, core_v1.ResourceCPU)
-	n, ok := nodeMap[pod.Spec.NodeName]
-	if !ok {
-		log.Log.Warnw(
-			"node lookup for pod failed - the node may have gone away",
-			zap.String("nodeName", pod.Spec.NodeName),
-			zap.String("pod", pod.ObjectMeta.Name),
-		)
-		return nil, ErrNoPodNode
-	}
-
-	ce, err := pricing.FindByLabels(n.Labels)
-	if err != nil {
-		log.Log.Errorw(
-			"could not find suitable pricing table entry",
-			zap.String("pod", pod.ObjectMeta.Name),
-		)
-		return nil, err
-	}
-
-	ci := podCostItem{
-		pod:   pod,
-		kind:  ResourceCostCPU,
-		value: ce.CPUCostMicroCents(c, interval),
-	}
-
-	return &ci, nil
 }
 
 // Calculate returns a slice of podCostItem records that expose
 // pricing details for services.
-func (c *coster) calculate() ([]podCostItem, error) {
+func (c *coster) calculate() ([]CostItem, error) {
 	log.Log.Debug("cost calculation loop triggered")
 
 	pods, err := c.podLister.List(labels.Everything())
@@ -170,29 +109,11 @@ func (c *coster) calculate() ([]podCostItem, error) {
 		return nil, err
 	}
 
-	nodeMap := map[string]*core_v1.Node{}
-	for _, n := range nodes {
-		nodeMap[n.ObjectMeta.Name] = n
+	cis := []CostItem{}
+	for _, s := range c.strategies {
+		cis = append(cis, s.Calculate(c.config.Pricing, c.interval, pods, nodes)...)
 	}
-
-	costItems := []podCostItem{}
-	for _, p := range pods {
-		pc, err := costItemForPod(p, &c.config.Pricing, c.interval, nodeMap)
-		if err != nil {
-			log.Log.Errorw("could not calculated pod cost", zap.Error(err))
-			continue
-		}
-		log.Log.Debugw(
-			"calculated pod cost",
-			zap.String("name", pc.pod.Name),
-			zap.String("namespace", pc.pod.Namespace),
-			zap.String("kind", string(pc.kind)),
-			zap.Int64("value", pc.value),
-		)
-		costItems = append(costItems, *pc)
-	}
-
-	return costItems, nil
+	return cis, nil
 }
 
 func (c *coster) CalculateAndEmit() error {
@@ -204,16 +125,11 @@ func (c *coster) CalculateAndEmit() error {
 
 	mp := &c.config.Mapper
 	for _, ci := range costs {
-		ctx, err := mp.MapContext(context.Background(), ci.pod)
+		ctx, err := mp.MapContext(context.Background(), ci)
 		if err != nil {
 			log.Log.Errorw("could not update tag context from pod metadata", zap.Error(err))
 		}
-
-		ctx, err = tag.New(ctx, tag.Upsert(TagKind, string(ci.kind)))
-		if err != nil {
-			log.Log.Errorw("could not update tag context with kind", zap.Error(err))
-		}
-		stats.Record(ctx, MeasureCost.M(ci.value))
+		stats.Record(ctx, MeasureCost.M(ci.Value))
 	}
 
 	return nil
