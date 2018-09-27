@@ -1,6 +1,8 @@
 package coster
 
 import (
+	"context"
+	"net/http"
 	"testing"
 	"time"
 
@@ -166,6 +168,7 @@ func TestCalculate(t *testing.T) {
 
 			c := &coster{
 				interval:   time.Hour,
+				ticker:     time.NewTicker(time.Hour),
 				exporter:   pro,
 				listenAddr: ":5000",
 				nodeLister: &nodl,
@@ -184,4 +187,38 @@ func TestCalculate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRun(t *testing.T) {
+	pro, err := prometheus.NewExporter(prometheus.Options{})
+	if err != nil {
+		t.Fatalf("could not get prometheus exporter %v", err)
+	}
+
+	nodl := lister.FakeNodeLister{Nodes: []*core_v1.Node{}}
+	podl := lister.FakePodLister{Pods: []*core_v1.Pod{}}
+
+	c := &coster{
+		interval:   time.Hour,
+		ticker:     time.NewTicker(time.Hour),
+		exporter:   pro,
+		listenAddr: ":5000",
+		nodeLister: &nodl,
+		podLister:  &podl,
+		strategies: []PricingStrategy{},
+	}
+
+	ch := make(chan struct{})
+	ctx, done := context.WithCancel(context.Background())
+	go func() {
+		defer close(ch)
+		if err := c.Run(ctx); err != nil && err != http.ErrServerClosed {
+			t.Fatal(err)
+		}
+	}()
+	go func() {
+		time.Sleep(time.Millisecond)
+		done()
+	}()
+	<-ch
 }
