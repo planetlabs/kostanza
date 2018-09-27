@@ -68,7 +68,7 @@ var CPUPricingStrategy = PricingStrategyFunc(func(table CostTable, duration time
 		cpu := sumPodResource(p, core_v1.ResourceCPU)
 		nr, ok := nrm[p.Spec.NodeName]
 		if !ok {
-			log.Log.Warnw("could not find nodeResourceMap", zap.String("nodeName", nr.node.ObjectMeta.Name))
+			log.Log.Warnw("could not find nodeResourceMap for node", zap.String("nodeName", p.Spec.NodeName))
 			continue
 		}
 
@@ -108,7 +108,7 @@ var WeightedPricingStrategy = PricingStrategyFunc(func(table CostTable, duration
 
 		nr, ok := nrm[p.Spec.NodeName]
 		if !ok {
-			log.Log.Warnw("could not find nodeResourceMap for node", zap.String("nodeName", nr.node.ObjectMeta.Name))
+			log.Log.Warnw("could not find nodeResourceMap for node", zap.String("nodeName", p.Spec.NodeName))
 			continue
 		}
 
