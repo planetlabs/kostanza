@@ -2,7 +2,6 @@ package coster
 
 import (
 	"bytes"
-	"context"
 
 	"go.opencensus.io/tag"
 	"k8s.io/client-go/util/jsonpath"
@@ -36,7 +35,7 @@ func (m *Mapper) TagKeys() ([]tag.Key, error) {
 	return tags, nil
 }
 
-func (m *Mapper) mapData(obj interface{}) (map[string]string, error) {
+func (m *Mapper) MapData(obj interface{}) (map[string]string, error) {
 	res := map[string]string{}
 	for _, mp := range m.Entries {
 		buf := new(bytes.Buffer)
@@ -58,25 +57,4 @@ func (m *Mapper) mapData(obj interface{}) (map[string]string, error) {
 		}
 	}
 	return res, nil
-}
-
-// MapContext augments a context with opencensus Tags according to the mapping.
-// The `Destination` attribute maps directly to the name of the tag.
-func (m *Mapper) MapContext(ctx context.Context, obj interface{}) (context.Context, error) {
-	d, err := m.mapData(obj)
-	if err != nil {
-		return nil, err
-	}
-
-	tags := []tag.Mutator{}
-	for k, v := range d {
-		t, err := tag.NewKey(k)
-		if err != nil {
-			return nil, err
-		}
-
-		tags = append(tags, tag.Upsert(t, v))
-	}
-
-	return tag.New(ctx, tags...)
 }

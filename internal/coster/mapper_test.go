@@ -67,7 +67,7 @@ var mapperTestCases = []struct {
 func TestMapperMapping(t *testing.T) {
 	for _, tt := range mapperTestCases {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := tt.mapper.mapData(tt.obj)
+			got, err := tt.mapper.MapData(tt.obj)
 			if err != nil {
 				t.Fatalf("error: %v", err)
 			}
