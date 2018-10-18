@@ -48,3 +48,7 @@
 [prune]
   go-tests = true
   unused-packages = true
+
+[[constraint]]
+  name = "cloud.google.com/go"
+  version = "0.30.0"
