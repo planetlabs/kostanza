@@ -26,15 +26,16 @@ var (
 	config    = app.Flag("config", "Path to configuration json.").Required().File()
 
 	collect                    = app.Command("collect", "Starts up kostanza in collection mode.")
-	listenAddr                 = collect.Flag("listen-addr", "Listen address for prometheus metrics and health checks.").Default(":5000").String()
-	kubecfg                    = collect.Flag("kubeconfig", "Path to kubeconfig file. Leave unset to use in-cluster config.").String()
-	apiserver                  = collect.Flag("master", "Address of Kubernetes API server. Leave unset to use in-cluster config.").String()
-	interval                   = collect.Flag("interval", "Cost calculation interval.").Default("10s").Duration()
+	collectListenAddr          = collect.Flag("listen-addr", "Listen address for prometheus metrics and health checks.").Default(":5000").String()
+	collectKubecfg             = collect.Flag("kubeconfig", "Path to kubeconfig file. Leave unset to use in-cluster config.").String()
+	collectApiserver           = collect.Flag("master", "Address of Kubernetes API server. Leave unset to use in-cluster config.").String()
+	collectInterval            = collect.Flag("interval", "Cost calculation interval.").Default("10s").Duration()
 	collectPubsubFlushInterval = collect.Flag("pubsub-flush-interval", "Pubsub buffer flush interval").Default("300s").Duration()
 	collectPubsubTopic         = collect.Flag("pubsub-topic", "Pubsub topic name for publishing cost metrics.").String()
 	collectPubsubProject       = collect.Flag("pubsub-project", "Pubsub project name for publishing cost metrics.").String()
 
 	aggregate                   = app.Command("aggregate", "Starts up kostanza in pubsub aggregation mode.")
+	aggregateListenAddr         = aggregate.Flag("listen-addr", "Listen address for prometheus metrics and health checks.").Default(":5000").String()
 	aggregatePubsubTopic        = aggregate.Flag("pubsub-topic", "Pubsub topic name for binding the cost subscription automatically.").Required().String()
 	aggregatePubsubSubscription = aggregate.Flag("pubsub-subscription", "Pubsub subscription name for pulling cost metrics.").Required().String()
 	aggregatePubsubProject      = aggregate.Flag("pubsub-project", "Pubsub project name for publishing cost metrics.").Required().String()
@@ -55,9 +56,17 @@ var (
 	viewPubsubErrors = &view.View{
 		Name:        "pubsub_errors_total",
 		Measure:     coster.MeasurePubsubPublishErrors,
-		Description: "Total pubsub publish errors",
+		Description: "Total pubsub publish errors.",
 		Aggregation: view.Sum(),
 		TagKeys:     []tag.Key{},
+	}
+
+	viewAggregate = &view.View{
+		Name:        "aggregate_consumptions_total",
+		Measure:     aggregator.MeasureAggregate,
+		Description: "Total aggregator consumption operations.",
+		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{aggregator.TagAggregateStatus},
 	}
 )
 
@@ -75,7 +84,7 @@ func main() {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		c, err := kubernetes.BuildConfigFromFlags(*apiserver, *kubecfg)
+		c, err := kubernetes.BuildConfigFromFlags(*collectApiserver, *collectKubecfg)
 		kingpin.FatalIfError(err, "cannot create Kubernetes client configuration")
 
 		cs, err := client.NewForConfig(c)
@@ -114,7 +123,7 @@ func main() {
 			ces = append(ces, bce)
 		}
 
-		coster, err := coster.NewKubernetesCoster(*interval, cf, cs, p, *listenAddr, ces)
+		coster, err := coster.NewKubernetesCoster(*collectInterval, cf, cs, p, *collectListenAddr, ces)
 		kingpin.FatalIfError(err, "cannot create coster")
 
 		kingpin.FatalIfError(coster.Run(ctx), "exited with error")
@@ -124,6 +133,12 @@ func main() {
 
 		cf, err := coster.NewConfigFromReader(*config)
 		kingpin.FatalIfError(err, "cannot read configuration data")
+
+		p, err := prometheus.NewExporter(prometheus.Options{Namespace: name})
+		kingpin.FatalIfError(err, "cannot export metrics")
+
+		kingpin.FatalIfError(view.Register(viewAggregate), "cannot register metrics")
+		view.RegisterExporter(p)
 
 		agg, err := aggregator.NewBigQueryAggregator(
 			ctx,
@@ -136,6 +151,8 @@ func main() {
 
 		con, err := aggregator.NewPubsubConsumer(
 			ctx,
+			p,
+			*aggregateListenAddr,
 			*aggregateBigQueryProject,
 			*aggregatePubsubTopic,
 			*aggregatePubsubSubscription,

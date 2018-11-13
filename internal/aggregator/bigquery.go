@@ -3,14 +3,29 @@ package aggregator
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
 
 	"cloud.google.com/go/bigquery"
 	"cloud.google.com/go/pubsub"
+	"go.opencensus.io/exporter/prometheus"
+	"go.opencensus.io/stats"
+	"go.opencensus.io/tag"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 
 	"github.com/jacobstr/kostanza/internal/coster"
 	"github.com/jacobstr/kostanza/internal/log"
+)
+
+var (
+	// MeasureAggregate measures aggregation results into the pubsub queue.
+	MeasureAggregate      = stats.Int64("kostanza_aggregator/measures/aggregate", "Aggregation operations", stats.UnitDimensionless)
+	TagAggregateStatus, _ = tag.NewKey("status")
+
+	tagStatusSucceded = "succeeded"
+	tagStatusFailed   = "failed"
 )
 
 func isAlreadyExistsError(err error) bool {
@@ -95,13 +110,15 @@ type Consumer interface {
 // PubsubConsumer consumers messages from pubsub and forwards them to the
 // provided aggregator.
 type PubsubConsumer struct {
-	subscription *pubsub.Subscription
-	aggregator   Aggregator
+	subscription       *pubsub.Subscription
+	aggregator         Aggregator
+	listenAddr         string
+	prometheusExporter *prometheus.Exporter
 }
 
 // NewPubsubConsumer consumes messages from pubsub and invokes the provider
 // aggregator with the message contents.
-func NewPubsubConsumer(ctx context.Context, project string, topic string, subscription string, aggregator Aggregator) (*PubsubConsumer, error) {
+func NewPubsubConsumer(ctx context.Context, prometheusExporter *prometheus.Exporter, listenAddr string, project string, topic string, subscription string, aggregator Aggregator) (*PubsubConsumer, error) {
 	psClient, err := pubsub.NewClient(ctx, project)
 	if err != nil {
 		log.Log.Errorw("could not create pubsub client", zap.Error(err))
@@ -114,29 +131,82 @@ func NewPubsubConsumer(ctx context.Context, project string, topic string, subscr
 	}
 
 	return &PubsubConsumer{
-		subscription: sub,
-		aggregator:   aggregator,
+		subscription:       sub,
+		listenAddr:         listenAddr,
+		aggregator:         aggregator,
+		prometheusExporter: prometheusExporter,
 	}, nil
 }
 
 func (pc *PubsubConsumer) Consume(ctx context.Context) error {
-	return pc.subscription.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
-		var ce coster.CostData
-		if err := json.Unmarshal(msg.Data, &ce); err != nil {
-			log.Log.Errorw("could not decode message data", zap.Error(err), zap.ByteString("data", msg.Data))
-			msg.Nack()
-			return
-		}
+	ctx, done := context.WithCancel(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 
-		if err := pc.aggregator.Aggregate(ctx, ce); err != nil {
-			log.Log.Errorw("could not aggregate cost data", zap.Error(err))
-			msg.Nack()
-			return
-		}
+	g.Go(func() error {
+		defer done()
 
-		msg.Ack()
-		return
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", pc.prometheusExporter)
+		mux.Handle("/healthz", http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				defer r.Body.Close() // nolint: errcheck
+				fmt.Fprintf(w, "ok") // nolint: errcheck
+			},
+		))
+
+		s := http.Server{
+			Addr:    pc.listenAddr,
+			Handler: mux,
+		}
+		log.Log.Infof("starting server on %s", pc.listenAddr)
+
+		go func() {
+			<-ctx.Done()
+			s.Shutdown(ctx) // nolint: gosec, errcheck
+		}()
+
+		err := s.ListenAndServe()
+		if err != nil {
+			log.Log.Errorw("error listening", zap.Error(err))
+			return err
+		}
+		return nil
 	})
+
+	g.Go(func() error {
+		defer done()
+
+		log.Log.Debug("starting cost calculation loop")
+		defer log.Log.Debug("exiting cost calculation loop")
+
+		return pc.subscription.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
+			var ce coster.CostData
+			if err := json.Unmarshal(msg.Data, &ce); err != nil {
+				log.Log.Errorw("could not decode message data", zap.Error(err), zap.ByteString("data", msg.Data))
+				msg.Ack()
+
+				ctx, _ = tag.New(ctx, tag.Upsert(TagAggregateStatus, tagStatusFailed)) // nolint: gosec
+				stats.Record(ctx, MeasureAggregate.M(1))
+				return
+			}
+
+			if err := pc.aggregator.Aggregate(ctx, ce); err != nil {
+				log.Log.Errorw("could not aggregate cost data", zap.Error(err))
+				msg.Ack()
+
+				ctx, _ = tag.New(ctx, tag.Upsert(TagAggregateStatus, tagStatusFailed)) // nolint: gosec
+				stats.Record(ctx, MeasureAggregate.M(1))
+				return
+			}
+
+			msg.Ack()
+			ctx, _ = tag.New(ctx, tag.Upsert(TagAggregateStatus, tagStatusSucceded)) // nolint: gosec
+			stats.Record(ctx, MeasureAggregate.M(1))
+			return
+		})
+	})
+
+	return g.Wait()
 }
 
 // Aggregator coalesces and persists coster.CostData from kostanza.
