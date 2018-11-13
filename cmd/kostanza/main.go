@@ -25,7 +25,7 @@ var (
 	verbosity = app.Flag("verbosity", "Logging verbosity level.").Short('v').Counter()
 	config    = app.Flag("config", "Path to configuration json.").Required().File()
 
-	collect                    = app.Command("collect", "Starts up kostanza in collection mode.")
+	collect                    = app.Command("collect", "Starts up kostanza in cost data collection mode.")
 	collectListenAddr          = collect.Flag("listen-addr", "Listen address for prometheus metrics and health checks.").Default(":5000").String()
 	collectKubecfg             = collect.Flag("kubeconfig", "Path to kubeconfig file. Leave unset to use in-cluster config.").String()
 	collectApiserver           = collect.Flag("master", "Address of Kubernetes API server. Leave unset to use in-cluster config.").String()
@@ -34,7 +34,7 @@ var (
 	collectPubsubTopic         = collect.Flag("pubsub-topic", "Pubsub topic name for publishing cost metrics.").String()
 	collectPubsubProject       = collect.Flag("pubsub-project", "Pubsub project name for publishing cost metrics.").String()
 
-	aggregate                   = app.Command("aggregate", "Starts up kostanza in pubsub aggregation mode.")
+	aggregate                   = app.Command("aggregate", "Starts up kostanza in pubsub consumption mode.")
 	aggregateListenAddr         = aggregate.Flag("listen-addr", "Listen address for prometheus metrics and health checks.").Default(":5000").String()
 	aggregatePubsubTopic        = aggregate.Flag("pubsub-topic", "Pubsub topic name for binding the cost subscription automatically.").Required().String()
 	aggregatePubsubSubscription = aggregate.Flag("pubsub-subscription", "Pubsub subscription name for pulling cost metrics.").Required().String()
