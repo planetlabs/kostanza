@@ -63,7 +63,15 @@ type Config struct {
 
 // NewKubernetesCoster returns a new coster that talks to a kubernetes cluster
 // via the provided client.
-func NewKubernetesCoster(interval time.Duration, config *Config, client kubernetes.Interface, exporter *prometheus.Exporter, listenAddr string) (*coster, error) { // nolint: golint
+func NewKubernetesCoster(
+	interval time.Duration,
+	config *Config,
+	client kubernetes.Interface,
+	prometheusExporter *prometheus.Exporter,
+	listenAddr string,
+	costExporters []CostExporter,
+) (*coster, error) { // nolint: golint
+
 	podLister := lister.NewKubernetesPodLister(client)
 	nodeLister := lister.NewKubernetesNodeLister(client)
 
@@ -72,26 +80,28 @@ func NewKubernetesCoster(interval time.Duration, config *Config, client kubernet
 	}
 
 	return &coster{
-		interval:   interval,
-		ticker:     time.NewTicker(interval),
-		podLister:  podLister,
-		nodeLister: nodeLister,
-		config:     config,
-		exporter:   exporter,
-		listenAddr: listenAddr,
-		strategies: []PricingStrategy{WeightedPricingStrategy, NodePricingStrategy},
+		interval:           interval,
+		ticker:             time.NewTicker(interval),
+		podLister:          podLister,
+		nodeLister:         nodeLister,
+		config:             config,
+		prometheusExporter: prometheusExporter,
+		costExporters:      costExporters,
+		listenAddr:         listenAddr,
+		strategies:         []PricingStrategy{WeightedPricingStrategy, NodePricingStrategy},
 	}, nil
 }
 
 type coster struct {
-	interval   time.Duration
-	ticker     *time.Ticker
-	podLister  lister.PodLister
-	nodeLister lister.NodeLister
-	config     *Config
-	exporter   *prometheus.Exporter
-	strategies []PricingStrategy
-	listenAddr string
+	interval           time.Duration
+	ticker             *time.Ticker
+	podLister          lister.PodLister
+	nodeLister         lister.NodeLister
+	config             *Config
+	strategies         []PricingStrategy
+	listenAddr         string
+	prometheusExporter *prometheus.Exporter
+	costExporters      []CostExporter
 }
 
 // Calculate returns a slice of podCostItem records that expose
@@ -123,13 +133,23 @@ func (c *coster) CalculateAndEmit() error {
 		return err
 	}
 
-	mp := &c.config.Mapper
+	mapper := &c.config.Mapper
 	for _, ci := range costs {
-		ctx, err := mp.MapContext(context.Background(), ci)
-		if err != nil {
-			log.Log.Errorw("could not update tag context from pod metadata", zap.Error(err))
+		for _, exp := range c.costExporters {
+			dims, err := mapper.MapData(ci)
+			if err != nil {
+				log.Log.Error("could not map data", zap.Error(err))
+				continue
+			}
+			ce := CostData{
+				Kind:       ci.Kind,
+				Strategy:   ci.Strategy,
+				Value:      ci.Value,
+				Dimensions: dims,
+				EndTime:    time.Now(),
+			}
+			exp.ExportCost(ce)
 		}
-		stats.Record(ctx, MeasureCost.M(ci.Value))
 	}
 
 	return nil
@@ -153,7 +173,7 @@ func (c *coster) Run(ctx context.Context) error {
 		defer done()
 
 		mux := http.NewServeMux()
-		mux.Handle("/metrics", c.exporter)
+		mux.Handle("/metrics", c.prometheusExporter)
 		mux.Handle("/healthz", http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
 				defer r.Body.Close() // nolint: errcheck

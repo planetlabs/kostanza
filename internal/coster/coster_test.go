@@ -80,7 +80,7 @@ func TestNewKubernetesCoster(t *testing.T) {
 		t.Fatalf("could not get prometheus exporter %v", err)
 	}
 
-	c, err := NewKubernetesCoster(dur, cfg, cli, pro, lis)
+	c, err := NewKubernetesCoster(dur, cfg, cli, pro, lis, nil)
 	if err != nil {
 		t.Fatalf("error constructing coster: %v", err)
 	}
@@ -167,14 +167,14 @@ func TestCalculate(t *testing.T) {
 			podl := lister.FakePodLister{Pods: tt.pods}
 
 			c := &coster{
-				interval:   time.Hour,
-				ticker:     time.NewTicker(time.Hour),
-				exporter:   pro,
-				listenAddr: ":5000",
-				nodeLister: &nodl,
-				podLister:  &podl,
-				config:     tt.config,
-				strategies: []PricingStrategy{CPUPricingStrategy},
+				interval:           time.Hour,
+				ticker:             time.NewTicker(time.Hour),
+				prometheusExporter: pro,
+				listenAddr:         ":5000",
+				nodeLister:         &nodl,
+				podLister:          &podl,
+				config:             tt.config,
+				strategies:         []PricingStrategy{CPUPricingStrategy},
 			}
 
 			ci, err := c.calculate()
@@ -199,13 +199,13 @@ func TestRun(t *testing.T) {
 	podl := lister.FakePodLister{Pods: []*core_v1.Pod{}}
 
 	c := &coster{
-		interval:   time.Hour,
-		ticker:     time.NewTicker(time.Hour),
-		exporter:   pro,
-		listenAddr: ":5000",
-		nodeLister: &nodl,
-		podLister:  &podl,
-		strategies: []PricingStrategy{},
+		interval:           time.Hour,
+		ticker:             time.NewTicker(time.Hour),
+		prometheusExporter: pro,
+		listenAddr:         ":5000",
+		nodeLister:         &nodl,
+		podLister:          &podl,
+		strategies:         []PricingStrategy{},
 	}
 
 	ch := make(chan struct{})

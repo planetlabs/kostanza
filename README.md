@@ -136,3 +136,61 @@ that the `NodePricingStrategy` is likely to emit defaults for metrics only relev
 to pods. This is a deliberate design choice at the moment - rather than having multiple
 measures or metrics, we have a single metric containing a superset of cost dimensions
 whether they apply to a particular strategy or not.
+
+# Exporters
+
+Kostanza exports cost data in two ways: as prometheus metrics, and to
+optionally to google pubsub. The pubsub export is largely intended to leave
+the primary kostanza agent decoupled from any particular storage backend - however,
+a secondary `aggregate` command is available as part of the kostanza binary to pipe
+these pubsub message into an automatically-provisioned BigQuery table.
+
+## Prometheus Exporter
+
+Intended for real time data and convenient calculation of costs as rates.
+Note that the cost counter will reset and it's absolute value should generally
+not be relied on - you'll want to take use the PromQL `rate` function to express
+costs as rates of change over time.
+
+## Pubsub Exporter and the Aggregate Subcommand
+
+For longer term analysis, kostanza allows for publishing messages to a pubsub
+queue where they can be consumed and funneled into a data warehouse such as
+GCP. Kostanza even offers a baked-in `aggregate` subcommand for the purpose.
+The payload of these messages is default json encoding of the coster.CostData
+structure:
+
+```go
+type CostData struct {
+	// The kind of cost figure represented.
+	Kind ResourceCostKind
+	// The strategy the yielded this CostItem.
+	Strategy string
+	// The value in microcents that it costs.
+	Value int64
+	// Additional dimensions associated with the cost.
+	Dimensions map[string]string
+	// The interval for which this metric was created.
+	EndTime time.Time
+}
+```
+
+The `aggregate` subcommand will happily consume messages that adhere to this
+general spefication and published to subscription specified by the
+`pubsub-subscription` startup argument. This may be useful if you wish to
+incorporate data from systems outside of kubernetes.
+
+### Auto-provisioning
+
+When the `aggregate` subcommand starts up, it will use the mapping defined in
+your configuration file to automatically provision a BigQuery table in the
+`bigquery-project` and `bigquery-dataset`, named according to the
+`bigquery-table` CLI flag.
+
+For convenience, we parse the [mapping](#mapping) specified in your
+configuration and automatically attempt to create `Dimension_DestinationName`
+columns for each of your mapping destinations. This can be incredibly
+convenient for bootstrapping or local development but is not a full data
+migration by any means: if the BigQuery table already exists, no attempt will
+be infer schema or data migrations on your behalf. Generally, a best practice
+may be to create an entirely new table if a new dimension is required.
