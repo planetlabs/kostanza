@@ -35,6 +35,9 @@ func (m *Mapper) TagKeys() ([]tag.Key, error) {
 	return tags, nil
 }
 
+// MapData returns a string map by applying the mappers rules to the obj
+// provided. The resulting map should have a corresponding field for every
+// source object.
 func (m *Mapper) MapData(obj interface{}) (map[string]string, error) {
 	res := map[string]string{}
 	for _, mp := range m.Entries {

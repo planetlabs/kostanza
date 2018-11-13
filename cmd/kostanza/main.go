@@ -12,7 +12,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	client "k8s.io/client-go/kubernetes"
 
-	"github.com/jacobstr/kostanza/internal/aggregator"
+	"github.com/jacobstr/kostanza/internal/consumer"
 	"github.com/jacobstr/kostanza/internal/coster"
 	"github.com/jacobstr/kostanza/internal/kubernetes"
 	"github.com/jacobstr/kostanza/internal/log"
@@ -61,12 +61,12 @@ var (
 		TagKeys:     []tag.Key{},
 	}
 
-	viewAggregate = &view.View{
-		Name:        "aggregate_consumptions_total",
-		Measure:     aggregator.MeasureAggregate,
+	viewConsume = &view.View{
+		Name:        "consume_consumed_total",
+		Measure:     consumer.MeasureConsume,
 		Description: "Total aggregator consumption operations.",
 		Aggregation: view.Sum(),
-		TagKeys:     []tag.Key{aggregator.TagAggregateStatus},
+		TagKeys:     []tag.Key{consumer.TagConsumeStatus},
 	}
 )
 
@@ -114,7 +114,7 @@ func main() {
 				zap.String("project", *collectPubsubProject),
 			)
 
-			ce, err := coster.NewPubsubCostExporter(ctx, *collectPubsubTopic, *collectPubsubProject)
+			ce, err := coster.NewPubsubCostExporter(ctx, *collectPubsubTopic, *collectPubsubProject) // nolint: vetshadow
 			kingpin.FatalIfError(err, "could not create pubsub cost exporter")
 
 			bce, err := coster.NewBufferingCostExporter(ctx, *collectPubsubFlushInterval, ce)
@@ -137,10 +137,10 @@ func main() {
 		p, err := prometheus.NewExporter(prometheus.Options{Namespace: name})
 		kingpin.FatalIfError(err, "cannot export metrics")
 
-		kingpin.FatalIfError(view.Register(viewAggregate), "cannot register metrics")
+		kingpin.FatalIfError(view.Register(viewConsume), "cannot register metrics")
 		view.RegisterExporter(p)
 
-		agg, err := aggregator.NewBigQueryAggregator(
+		agg, err := consumer.NewBigQueryAggregator(
 			ctx,
 			*aggregatePubsubProject,
 			*aggregateBigQueryDataset,
@@ -149,7 +149,7 @@ func main() {
 		)
 		kingpin.FatalIfError(err, "could not create aggregator")
 
-		con, err := aggregator.NewPubsubConsumer(
+		con, err := consumer.NewPubsubConsumer(
 			ctx,
 			p,
 			*aggregateListenAddr,

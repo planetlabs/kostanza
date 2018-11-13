@@ -1,4 +1,4 @@
-package aggregator
+package consumer
 
 import (
 	"context"
@@ -20,9 +20,10 @@ import (
 )
 
 var (
-	// MeasureAggregate measures aggregation results into the pubsub queue.
-	MeasureAggregate      = stats.Int64("kostanza_aggregator/measures/aggregate", "Aggregation operations", stats.UnitDimensionless)
-	TagAggregateStatus, _ = tag.NewKey("status")
+	// MeasureConsume measures aggregation results into the pubsub queue.
+	MeasureConsume = stats.Int64("kostanza_aggregator/measures/consume", "Consumption operations", stats.UnitDimensionless)
+	// TagConsumeStatus indicates the success or failure of a consumption
+	TagConsumeStatus, _ = tag.NewKey("status")
 
 	tagStatusSucceded = "succeeded"
 	tagStatusFailed   = "failed"
@@ -46,10 +47,13 @@ func isNotFoundError(err error) bool {
 	return false
 }
 
+// CostRow augments CostData with BigQuery specific interfaces for import
+// purposes via the bigquery.Uploader.
 type CostRow struct {
 	coster.CostData
 }
 
+// Save prepares a CostRow for import into BigQuery.
 func (ce CostRow) Save() (row map[string]bigquery.Value, insertID string, err error) {
 	dims, err := json.Marshal(ce.CostData.Dimensions)
 	if err != nil {
@@ -138,6 +142,8 @@ func NewPubsubConsumer(ctx context.Context, prometheusExporter *prometheus.Expor
 	}, nil
 }
 
+// Consume begins the message consumption loop. It also registers and serves the
+// `/metrics` and `/healthz` endpoints for monitoring purposes.
 func (pc *PubsubConsumer) Consume(ctx context.Context) error {
 	ctx, done := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
@@ -185,8 +191,8 @@ func (pc *PubsubConsumer) Consume(ctx context.Context) error {
 				log.Log.Errorw("could not decode message data", zap.Error(err), zap.ByteString("data", msg.Data))
 				msg.Ack()
 
-				ctx, _ = tag.New(ctx, tag.Upsert(TagAggregateStatus, tagStatusFailed)) // nolint: gosec
-				stats.Record(ctx, MeasureAggregate.M(1))
+				ctx, _ = tag.New(ctx, tag.Upsert(TagConsumeStatus, tagStatusFailed)) // nolint: gosec
+				stats.Record(ctx, MeasureConsume.M(1))
 				return
 			}
 
@@ -194,14 +200,14 @@ func (pc *PubsubConsumer) Consume(ctx context.Context) error {
 				log.Log.Errorw("could not aggregate cost data", zap.Error(err))
 				msg.Ack()
 
-				ctx, _ = tag.New(ctx, tag.Upsert(TagAggregateStatus, tagStatusFailed)) // nolint: gosec
-				stats.Record(ctx, MeasureAggregate.M(1))
+				ctx, _ = tag.New(ctx, tag.Upsert(TagConsumeStatus, tagStatusFailed)) // nolint: gosec
+				stats.Record(ctx, MeasureConsume.M(1))
 				return
 			}
 
 			msg.Ack()
-			ctx, _ = tag.New(ctx, tag.Upsert(TagAggregateStatus, tagStatusSucceded)) // nolint: gosec
-			stats.Record(ctx, MeasureAggregate.M(1))
+			ctx, _ = tag.New(ctx, tag.Upsert(TagConsumeStatus, tagStatusSucceded)) // nolint: gosec
+			stats.Record(ctx, MeasureConsume.M(1))
 			return
 		})
 	})
@@ -220,7 +226,7 @@ type BigQueryAggregator struct {
 	uploader *bigquery.Uploader
 }
 
-// NewBigueryAggregator creates a new Aggregator that publishes consumed pubsub
+// NewBigQueryAggregator creates a new Aggregator that publishes consumed pubsub
 // events to the named BigQuery dataset and table. It will attempt to provision
 // the table using a schema inferred from the current version of the
 // application if the table does not yet exist.

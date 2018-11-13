@@ -34,7 +34,7 @@ type StatsCostExporter struct {
 	mapper *Mapper
 }
 
-// NewStatsExporter returns a new StatsCostExporter.
+// NewStatsCostExporter returns a new StatsCostExporter.
 func NewStatsCostExporter(mapper *Mapper) *StatsCostExporter {
 	return &StatsCostExporter{
 		mapper: mapper,
@@ -87,6 +87,10 @@ type CostData struct {
 	EndTime time.Time
 }
 
+// CostDataKey groups related cost data. Note: this isn't very space efficient
+// at the moment given the duplication between it and the CostDataRow. We could,
+// for example use a hashing function instead but this ought to be friendly
+// for debugging in the short term.
 type CostDataKey struct {
 	// The kind of cost figure represented.
 	Kind ResourceCostKind
@@ -96,7 +100,7 @@ type CostDataKey struct {
 	Dimensions string
 }
 
-// MarhshalLogObject exports CostData fields for the zap logger.
+// MarshalLogObject exports CostData fields for the zap logger.
 func (c *CostData) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("Kind", string(c.Kind))
 	enc.AddString("Strategy", c.Strategy)

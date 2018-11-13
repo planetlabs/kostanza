@@ -1,4 +1,4 @@
-package aggregator
+package consumer
 
 import (
 	"testing"
