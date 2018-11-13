@@ -133,9 +133,22 @@ func (c *coster) CalculateAndEmit() error {
 		return err
 	}
 
+	mapper := &c.config.Mapper
 	for _, ci := range costs {
 		for _, exp := range c.costExporters {
-			exp.ExportCost(ci)
+			dims, err := mapper.MapData(ci)
+			if err != nil {
+				log.Log.Error("could not map data", zap.Error(err))
+				continue
+			}
+			ce := CostData{
+				Kind:       ci.Kind,
+				Strategy:   ci.Strategy,
+				Value:      ci.Value,
+				Dimensions: dims,
+				EndTime:    time.Now(),
+			}
+			exp.ExportCost(ce)
 		}
 	}
 

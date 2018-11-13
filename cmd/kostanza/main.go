@@ -25,13 +25,14 @@ var (
 	verbosity = app.Flag("verbosity", "Logging verbosity level.").Short('v').Counter()
 	config    = app.Flag("config", "Path to configuration json.").Required().File()
 
-	collect              = app.Command("collect", "Starts up kostanza in collection mode.")
-	listenAddr           = collect.Flag("listen-addr", "Listen address for prometheus metrics and health checks.").Default(":5000").String()
-	kubecfg              = collect.Flag("kubeconfig", "Path to kubeconfig file. Leave unset to use in-cluster config.").String()
-	apiserver            = collect.Flag("master", "Address of Kubernetes API server. Leave unset to use in-cluster config.").String()
-	interval             = collect.Flag("interval", "Cost calculation interval.").Default("10s").Duration()
-	collectPubsubTopic   = collect.Flag("pubsub-topic", "Pubsub topic name for publishing cost metrics.").String()
-	collectPubsubProject = collect.Flag("pubsub-project", "Pubsub project name for publishing cost metrics.").String()
+	collect                    = app.Command("collect", "Starts up kostanza in collection mode.")
+	listenAddr                 = collect.Flag("listen-addr", "Listen address for prometheus metrics and health checks.").Default(":5000").String()
+	kubecfg                    = collect.Flag("kubeconfig", "Path to kubeconfig file. Leave unset to use in-cluster config.").String()
+	apiserver                  = collect.Flag("master", "Address of Kubernetes API server. Leave unset to use in-cluster config.").String()
+	interval                   = collect.Flag("interval", "Cost calculation interval.").Default("10s").Duration()
+	collectPubsubFlushInterval = collect.Flag("pubsub-flush-interval", "Pubsub buffer flush interval").Default("300s").Duration()
+	collectPubsubTopic         = collect.Flag("pubsub-topic", "Pubsub topic name for publishing cost metrics.").String()
+	collectPubsubProject       = collect.Flag("pubsub-project", "Pubsub project name for publishing cost metrics.").String()
 
 	aggregate                   = app.Command("aggregate", "Starts up kostanza in pubsub aggregation mode.")
 	aggregatePubsubTopic        = aggregate.Flag("pubsub-topic", "Pubsub topic name for binding the cost subscription automatically.").Required().String()
@@ -71,6 +72,9 @@ func main() {
 
 	switch parsed {
 	case collect.FullCommand():
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
 		c, err := kubernetes.BuildConfigFromFlags(*apiserver, *kubecfg)
 		kingpin.FatalIfError(err, "cannot create Kubernetes client configuration")
 
@@ -100,17 +104,21 @@ func main() {
 				zap.String("topic", *collectPubsubTopic),
 				zap.String("project", *collectPubsubProject),
 			)
-			ce, err := coster.NewPubsubCostExporter(context.Background(), *collectPubsubTopic, *collectPubsubProject, &cf.Mapper)
+
+			ce, err := coster.NewPubsubCostExporter(ctx, *collectPubsubTopic, *collectPubsubProject)
 			kingpin.FatalIfError(err, "could not create pubsub cost exporter")
-			ces = append(ces, ce)
+
+			bce, err := coster.NewBufferingCostExporter(ctx, *collectPubsubFlushInterval, ce)
+			kingpin.FatalIfError(err, "could not create buffering cost exporter")
+
+			ces = append(ces, bce)
 		}
 
 		coster, err := coster.NewKubernetesCoster(*interval, cf, cs, p, *listenAddr, ces)
 		kingpin.FatalIfError(err, "cannot create coster")
 
-		kingpin.FatalIfError(coster.Run(context.Background()), "exited with error")
+		kingpin.FatalIfError(coster.Run(ctx), "exited with error")
 	case aggregate.FullCommand():
-		// TODO cancelation signal handler.
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
