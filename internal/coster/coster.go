@@ -13,6 +13,7 @@ import (
 	"go.opencensus.io/stats"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+	core_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 
@@ -89,6 +90,7 @@ func NewKubernetesCoster(
 		costExporters:      costExporters,
 		listenAddr:         listenAddr,
 		strategies:         []PricingStrategy{CPUPricingStrategy, MemoryPricingStrategy, WeightedPricingStrategy, NodePricingStrategy},
+		podFilters:         PodFilters{RunningPodFilter},
 	}, nil
 }
 
@@ -102,6 +104,27 @@ type coster struct {
 	listenAddr         string
 	prometheusExporter *prometheus.Exporter
 	costExporters      []CostExporter
+	podFilters         PodFilters
+}
+
+func (c *coster) filterPod(p *core_v1.Pod) bool {
+	for _, f := range c.podFilters {
+		if f(p) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *coster) applyPodFilters(pods []*core_v1.Pod) []*core_v1.Pod {
+	ret := []*core_v1.Pod{}
+	for _, p := range pods {
+		if !c.podFilters.All(p) {
+			continue
+		}
+		ret = append(ret, p)
+	}
+	return ret
 }
 
 // Calculate returns a slice of podCostItem records that expose
@@ -113,6 +136,8 @@ func (c *coster) calculate() ([]CostItem, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	pods = c.applyPodFilters(pods)
 
 	nodes, err := c.nodeLister.List(labels.Everything())
 	if err != nil {
