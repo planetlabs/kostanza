@@ -111,7 +111,8 @@ func TestFindByLabels(t *testing.T) {
 
 var (
 	singleCPU32MebEntry = &CostTableEntry{
-		HourlyCostMicroCents: 15 * 1e6,
+		HourlyMemoryByteCostMicroCents: 1,
+		HourlyMilliCPUCostMicroCents:   15000,
 	}
 )
 
@@ -127,7 +128,6 @@ var costEntryCPUCalculations = []struct {
 		name:         "half cpu for an hour",
 		entry:        singleCPU32MebEntry,
 		milliCPU:     500,
-		totalCPU:     1000,
 		duration:     time.Hour,
 		expectedCost: 7500000,
 	},
@@ -135,7 +135,6 @@ var costEntryCPUCalculations = []struct {
 		name:         "half cpu for 5 minutes",
 		entry:        singleCPU32MebEntry,
 		milliCPU:     500,
-		totalCPU:     1000,
 		duration:     time.Minute * 5,
 		expectedCost: 625000,
 	},
@@ -144,7 +143,7 @@ var costEntryCPUCalculations = []struct {
 func TestCostEntryCPUCalculations(t *testing.T) {
 	for _, tt := range costEntryCPUCalculations {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.entry.CPUCostMicroCents(float64(tt.milliCPU)/float64(tt.totalCPU), tt.duration)
+			got := tt.entry.CPUCostMicroCents(float64(tt.milliCPU), tt.duration)
 			if got != tt.expectedCost {
 				t.Fatalf("expected cpu cost of %v got %v", tt.expectedCost, got)
 			}
@@ -164,24 +163,22 @@ var costEntryMemoryCalculations = []struct {
 		name:         "mebibyte of memory for an hour",
 		entry:        singleCPU32MebEntry,
 		mib:          1048576,
-		totalMib:     33554432,
 		duration:     time.Hour,
-		expectedCost: 468750,
+		expectedCost: 1048576,
 	},
 	{
 		name:         "mebibyte of memory for a minute",
 		entry:        singleCPU32MebEntry,
 		mib:          1048576,
-		totalMib:     33554432,
 		duration:     time.Minute,
-		expectedCost: 7812, // exactly 7812.5, but truncated.
+		expectedCost: 17476,
 	},
 }
 
 func TestCostEntryMemoryCalculations(t *testing.T) {
 	for _, tt := range costEntryMemoryCalculations {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.entry.MemoryCostMicroCents(float64(tt.mib)/float64(tt.totalMib), tt.duration)
+			got := tt.entry.MemoryCostMicroCents(float64(tt.mib), tt.duration)
 			if got != tt.expectedCost {
 				t.Fatalf("expected memory cost of %v got %v", tt.expectedCost, got)
 			}

@@ -54,13 +54,20 @@ var testStrategyNode = &core_v1.Node{
 		Name:   strategyTestNodeName,
 		Labels: strategyTestNodeLabels,
 	},
+	Status: core_v1.NodeStatus{
+		Capacity: core_v1.ResourceList{
+			"cpu":    resource.MustParse("1"),
+			"memory": resource.MustParse("1Gi"),
+		},
+	},
 }
 
 var testStrategyCostTable = CostTable{
 	Entries: []*CostTableEntry{
 		&CostTableEntry{
-			Labels:               strategyTestNodeLabels,
-			HourlyCostMicroCents: 1000000,
+			Labels: strategyTestNodeLabels,
+			HourlyMilliCPUCostMicroCents:   1000,
+			HourlyMemoryByteCostMicroCents: 1,
 		},
 	},
 }
@@ -83,7 +90,7 @@ var testCPUStrategyCases = []struct {
 		strategy: CPUPricingStrategy,
 		expectedCostItems: []CostItem{
 			CostItem{
-				Value:    1000000,
+				Value:    500000,
 				Kind:     ResourceCostCPU,
 				Pod:      testStrategyPodA,
 				Node:     testStrategyNode,
@@ -100,14 +107,14 @@ var testCPUStrategyCases = []struct {
 		strategy: CPUPricingStrategy,
 		expectedCostItems: []CostItem{
 			CostItem{
-				Value:    666666,
+				Value:    500000,
 				Kind:     ResourceCostCPU,
 				Pod:      testStrategyPodA,
 				Node:     testStrategyNode,
 				Strategy: StrategyNameCPU,
 			},
 			CostItem{
-				Value:    333333,
+				Value:    250000,
 				Kind:     ResourceCostCPU,
 				Pod:      testStrategyPodB,
 				Node:     testStrategyNode,
@@ -116,7 +123,7 @@ var testCPUStrategyCases = []struct {
 		},
 	},
 	{
-		name:     "Happy day WeightPricingStrategy with two pods.",
+		name:     "Happy day WeightedPricingStrategy with two pods.",
 		pods:     []*core_v1.Pod{testStrategyPodA, testStrategyPodB},
 		nodes:    []*core_v1.Node{testStrategyNode},
 		table:    testStrategyCostTable,
@@ -124,14 +131,14 @@ var testCPUStrategyCases = []struct {
 		strategy: WeightedPricingStrategy,
 		expectedCostItems: []CostItem{
 			CostItem{
-				Value:    583333,
+				Value:    537537578,
 				Kind:     ResourceCostWeighted,
 				Pod:      testStrategyPodA,
 				Node:     testStrategyNode,
 				Strategy: StrategyNameWeighted,
 			},
 			CostItem{
-				Value:    416666,
+				Value:    537204245,
 				Kind:     ResourceCostWeighted,
 				Pod:      testStrategyPodB,
 				Node:     testStrategyNode,
@@ -148,7 +155,7 @@ var testCPUStrategyCases = []struct {
 		strategy: NodePricingStrategy,
 		expectedCostItems: []CostItem{
 			CostItem{
-				Value:    1000000,
+				Value:    1074741824, // 1073741824 (gibibyte) + 1e6 (1000 millicpus * 1000 per millicpu hour)
 				Kind:     ResourceCostNode,
 				Node:     testStrategyNode,
 				Strategy: StrategyNameNode,

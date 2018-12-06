@@ -11,6 +11,8 @@ import (
 const (
 	// StrategyNameCPU is used whenever we derive a cost metric using the CPUPricingStrategy.
 	StrategyNameCPU = "CPUPricingStrategy"
+	// StrategyNameCPU is used whenever we derive a cost metric using the MemoryPricingStrategy.
+	StrategyNameMemory = "MemoryPricingStrategy"
 	// StrategyNameNode is used whenever we derive a cost metric using the NodePricingStrategy.
 	StrategyNameNode = "NodePricingStrategy"
 	// StrategyNameWeighted is used whenever we derive a cost metric using the WeightedPricingStrategy.
@@ -51,39 +53,77 @@ type PricingStrategy interface {
 // allocatedNodeResources tracks the allocated resources for a given node, generally determined by
 // taking the sum of individual resource requests from pods.
 type allocatedNodeResources struct {
-	cpu    int64
-	memory int64
-	node   *core_v1.Node
+	cpuUsed         int64
+	memoryUsed      int64
+	cpuAvailable    int64
+	memoryAvailable int64
+	node            *core_v1.Node
 }
 
 // CPUPricingStrategy calculates the cost of a pod based strictly on it's share
-// of CPU requests as a fraction of all CPU requests on the node onto which it
-// is allocated. The pods and nodes provided are expected to represent all pods
-// and nodes that we care about and should generally exclude DaemonSet pods that
-// are scheduled to the node by cluster administrators.
+// of CPU requests as a fraction of all CPU available on the node onto which it
+// is allocated.
 var CPUPricingStrategy = PricingStrategyFunc(func(table CostTable, duration time.Duration, pods []*core_v1.Pod, nodes []*core_v1.Node) []CostItem {
-	nrm := buildNodeResourceMap(pods, nodes)
+	nm := buildNodeMap(nodes)
 	cis := []CostItem{}
 	for _, p := range pods {
 		cpu := sumPodResource(p, core_v1.ResourceCPU)
-		nr, ok := nrm[p.Spec.NodeName]
+		node, ok := nm[p.Spec.NodeName]
 		if !ok {
 			log.Log.Warnw("could not find nodeResourceMap for node", zap.String("nodeName", p.Spec.NodeName))
 			continue
 		}
 
-		te, err := table.FindByLabels(nr.node.Labels)
+		te, err := table.FindByLabels(node.Labels)
 		if err != nil {
-			log.Log.Warnw("could not find pricing entry for node", zap.String("nodeName", nr.node.ObjectMeta.Name))
+			log.Log.Warnw("could not find pricing entry for node", zap.String("nodeName", node.ObjectMeta.Name))
 			continue
 		}
 
 		ci := CostItem{
 			Kind:     ResourceCostCPU,
-			Value:    te.CPUCostMicroCents(float64(cpu)/float64(nr.cpu), duration),
+			Value:    te.CPUCostMicroCents(float64(cpu), duration),
 			Pod:      p,
-			Node:     nr.node,
+			Node:     node,
 			Strategy: StrategyNameCPU,
+		}
+		log.Log.Debugw(
+			"generated cost item",
+			zap.String("pod", ci.Pod.ObjectMeta.Name),
+			zap.String("strategy", ci.Strategy),
+			zap.Int64("value", ci.Value),
+		)
+		cis = append(cis, ci)
+	}
+	return cis
+})
+
+// MemoryPricingStrategy calculates the cost of a pod based strictly on it's
+// share of memory requests as a fraction of all memory on the node onto which
+// it was scheduled.
+var MemoryPricingStrategy = PricingStrategyFunc(func(table CostTable, duration time.Duration, pods []*core_v1.Pod, nodes []*core_v1.Node) []CostItem {
+	nm := buildNodeMap(nodes)
+	cis := []CostItem{}
+	for _, p := range pods {
+		mem := sumPodResource(p, core_v1.ResourceMemory)
+		node, ok := nm[p.Spec.NodeName]
+		if !ok {
+			log.Log.Warnw("could not find nodeResourceMap for node", zap.String("nodeName", p.Spec.NodeName))
+			continue
+		}
+
+		te, err := table.FindByLabels(node.Labels)
+		if err != nil {
+			log.Log.Warnw("could not find pricing entry for node", zap.String("nodeName", node.ObjectMeta.Name))
+			continue
+		}
+
+		ci := CostItem{
+			Kind:     ResourceCostMemory,
+			Value:    te.MemoryCostMicroCents(float64(mem), duration),
+			Pod:      p,
+			Node:     node,
+			Strategy: StrategyNameMemory,
 		}
 		log.Log.Debugw(
 			"generated cost item",
@@ -98,9 +138,11 @@ var CPUPricingStrategy = PricingStrategyFunc(func(table CostTable, duration time
 
 // WeightedPricingStrategy calculates the cost of a pod based on it's average use of the
 // CPU and Memory requests as a fraction of all CPU and memory requests on the node onto
-// which it has been allocated.
+// which it has been allocated. This strategy ensures that unallocated resources do not
+// go unattributed and has a tendency to punish pods that may occupy oddly shaped resources
+// or those that frequently churn.
 var WeightedPricingStrategy = PricingStrategyFunc(func(table CostTable, duration time.Duration, pods []*core_v1.Pod, nodes []*core_v1.Node) []CostItem {
-	nrm := buildNodeResourceMap(pods, nodes)
+	nrm := buildNormalizedNodeResourceMap(pods, nodes)
 	cis := []CostItem{}
 	for _, p := range pods {
 		cpu := sumPodResource(p, core_v1.ResourceCPU)
@@ -118,12 +160,17 @@ var WeightedPricingStrategy = PricingStrategyFunc(func(table CostTable, duration
 			continue
 		}
 
-		cpucost := te.CPUCostMicroCents(float64(cpu)/float64(nr.cpu), duration)
-		memcost := te.MemoryCostMicroCents(float64(mem)/float64(nr.memory), duration)
+		// We "normalize" cpu and memory utilization by scaling the utilized cpu and memory
+		// of pods by the utilization of the the respective resources on the node.
+		cpuscale := float64(nr.cpuAvailable) / float64(nr.cpuUsed)
+		memscale := float64(nr.memoryAvailable) / float64(nr.memoryUsed)
+
+		cpucost := te.CPUCostMicroCents(float64(cpu)*cpuscale, duration)
+		memcost := te.MemoryCostMicroCents(float64(mem)*memscale, duration)
 
 		ci := CostItem{
 			Kind:     ResourceCostWeighted,
-			Value:    (cpucost + memcost) / 2,
+			Value:    cpucost + memcost,
 			Pod:      p,
 			Node:     nr.node,
 			Strategy: StrategyNameWeighted,
@@ -150,9 +197,25 @@ var NodePricingStrategy = PricingStrategyFunc(func(table CostTable, duration tim
 			log.Log.Warnw("could not find pricing entry for node", zap.String("nodeName", n.ObjectMeta.Name))
 			continue
 		}
+
+		c := n.Status.Capacity.Cpu()
+		if c == nil {
+			log.Log.Warnw("could not get node cpu capacity, skipping", zap.String("nodeName", n.ObjectMeta.Name))
+			continue
+		}
+
+		m := n.Status.Capacity.Memory()
+		if m == nil {
+			log.Log.Warnw("could not get node memory :wcapacity, skipping", zap.String("nodeName", n.ObjectMeta.Name))
+			continue
+		}
+
+		memcost := te.MemoryCostMicroCents(float64(m.MilliValue())/1000, duration)
+		cpucost := te.CPUCostMicroCents(float64(c.MilliValue()), duration)
+
 		ci := CostItem{
 			Kind:     ResourceCostNode,
-			Value:    te.CPUCostMicroCents(1, duration),
+			Value:    memcost + cpucost,
 			Node:     n,
 			Strategy: StrategyNameNode,
 		}
@@ -190,8 +253,22 @@ func sumPodResource(p *core_v1.Pod, kind core_v1.ResourceName) int64 {
 }
 
 type nodeResourceMap map[string]allocatedNodeResources
+type nodeMap map[string]*core_v1.Node
 
-func buildNodeResourceMap(pods []*core_v1.Pod, nodes []*core_v1.Node) nodeResourceMap {
+func buildNodeMap(nodes []*core_v1.Node) nodeMap {
+	nm := nodeMap{}
+	for _, n := range nodes {
+		nm[n.ObjectMeta.Name] = n
+	}
+	return nm
+}
+
+// cpu and memory models just need to take the pod resources and multiply them by the hourly cost.
+// normalized models need to take the pod resources and scale them by the unutlized fraction
+// e.g. my pod uses 500 cpu
+// the node has 1 cpu
+// my pod is the only pod on the node, and total nod resources are 500
+func buildNormalizedNodeResourceMap(pods []*core_v1.Pod, nodes []*core_v1.Node) nodeResourceMap {
 	nrm := nodeResourceMap{}
 
 	for _, n := range nodes {
@@ -210,38 +287,22 @@ func buildNodeResourceMap(pods []*core_v1.Pod, nodes []*core_v1.Node) nodeResour
 			log.Log.Warnw("unexpected missing node from NodeMap", zap.String("nodeName", p.Spec.NodeName))
 			continue
 		}
-		nr.cpu += sumPodResource(p, core_v1.ResourceCPU)
-		nr.memory += sumPodResource(p, core_v1.ResourceMemory)
+		nr.cpuUsed += sumPodResource(p, core_v1.ResourceCPU)
+		nr.memoryUsed += sumPodResource(p, core_v1.ResourceMemory)
 		nrm[p.Spec.NodeName] = nr
 	}
 
-	// For caller's sake, ensure we do not divide by zero by setting cpu / memory
-	// to the alloctable node resources if our calculated cpu and memory remain at
-	// 0 after we've summed pod resource allocations for the pods running on all
-	// nodes. This may happen if pods lack resource requests, which is less than
-	// ideal for our purposes since scheduling and subsequently autoscaling requires
-	// these in order to behave in a well-defined manner.
 	for k, v := range nrm {
-		if v.cpu == 0 {
-			log.Log.Warnw(
-				"node has no cpu resource requests from allocated pods, defaulting to alloctable capacity.",
-				zap.String("nodeName", v.node.ObjectMeta.Name),
-			)
-			c := v.node.Status.Allocatable.Cpu()
-			if c != nil {
-				v.cpu = c.MilliValue()
-			}
+		c := v.node.Status.Capacity.Cpu()
+		if c != nil {
+			v.cpuAvailable = c.MilliValue()
 		}
-		if v.memory == 0 {
-			log.Log.Warnw(
-				"node has no memory resource requests from allocated pods, defaulting to allocatable capacity.",
-				zap.String("nodeName", v.node.ObjectMeta.Name),
-			)
-			m := v.node.Status.Allocatable.Memory()
-			if m != nil {
-				v.memory = m.MilliValue() / 1000
-			}
+
+		m := v.node.Status.Capacity.Memory()
+		if m != nil {
+			v.memoryAvailable = m.MilliValue() / 1000
 		}
+
 		nrm[k] = v
 	}
 
