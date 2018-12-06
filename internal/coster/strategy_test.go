@@ -123,6 +123,23 @@ var testCPUStrategyCases = []struct {
 		},
 	},
 	{
+		name:     "Happy day MemoryPricingStrategy with a single pod.",
+		pods:     []*core_v1.Pod{testStrategyPodA},
+		nodes:    []*core_v1.Node{testStrategyNode},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: MemoryPricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    33554432,
+				Kind:     ResourceCostMemory,
+				Pod:      testStrategyPodA,
+				Node:     testStrategyNode,
+				Strategy: StrategyNameMemory,
+			},
+		},
+	},
+	{
 		name:     "Happy day WeightedPricingStrategy with two pods.",
 		pods:     []*core_v1.Pod{testStrategyPodA, testStrategyPodB},
 		nodes:    []*core_v1.Node{testStrategyNode},
