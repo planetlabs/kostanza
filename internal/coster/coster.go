@@ -88,7 +88,7 @@ func NewKubernetesCoster(
 		prometheusExporter: prometheusExporter,
 		costExporters:      costExporters,
 		listenAddr:         listenAddr,
-		strategies:         []PricingStrategy{WeightedPricingStrategy, NodePricingStrategy},
+		strategies:         []PricingStrategy{CPUPricingStrategy, MemoryPricingStrategy, WeightedPricingStrategy, NodePricingStrategy},
 	}, nil
 }
 

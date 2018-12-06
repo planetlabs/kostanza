@@ -107,7 +107,7 @@ var testCalculationPod = &core_v1.Pod{
 			core_v1.Container{
 				Resources: core_v1.ResourceRequirements{
 					Requests: core_v1.ResourceList{
-						"cpu": resource.MustParse("500m"),
+						"cpu": resource.MustParse("1000m"),
 					},
 				},
 			},
@@ -122,7 +122,7 @@ var testCalculationNode = &core_v1.Node{
 	},
 }
 
-var calculcateCases = []struct {
+var calculateCases = []struct {
 	name              string
 	pods              []*core_v1.Pod
 	nodes             []*core_v1.Node
@@ -130,15 +130,15 @@ var calculcateCases = []struct {
 	expectedCostItems []CostItem
 }{
 	{
-		name:  "single container pod on a node using half it's cpu",
+		name:  "single container pod on a node using a single cpu",
 		pods:  []*core_v1.Pod{testCalculationPod},
 		nodes: []*core_v1.Node{testCalculationNode},
 		config: &Config{
 			Pricing: CostTable{
 				Entries: []*CostTableEntry{
 					&CostTableEntry{
-						Labels:               calculateTestNodeLabels,
-						HourlyCostMicroCents: 1000000,
+						Labels: calculateTestNodeLabels,
+						HourlyMilliCPUCostMicroCents: 1000,
 					},
 				},
 			},
@@ -156,7 +156,7 @@ var calculcateCases = []struct {
 }
 
 func TestCalculate(t *testing.T) {
-	for _, tt := range calculcateCases {
+	for _, tt := range calculateCases {
 		t.Run(tt.name, func(t *testing.T) {
 			pro, err := prometheus.NewExporter(prometheus.Options{})
 			if err != nil {
