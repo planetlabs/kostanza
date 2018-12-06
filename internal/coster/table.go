@@ -28,8 +28,8 @@ func (l Labels) Match(key, value string) bool {
 // identify nodes.
 type CostTableEntry struct {
 	Labels                         Labels
-	HourlyMemoryByteCostMicroCents int64
-	HourlyMilliCPUCostMicroCents   int64
+	HourlyMemoryByteCostMicroCents float64
+	HourlyMilliCPUCostMicroCents   float64
 }
 
 // Match returns true if all of the CostTableEntry's labels match some subeset
