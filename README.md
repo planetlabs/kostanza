@@ -57,13 +57,15 @@ when a key is left empty.
         "Labels": {
           "beta.kubernetes.io/instance-type": "n1-standard-16"
         },
-        "HourlyCostMicroCents": 400000000
+        "HourlyMemoryByteCostMicroCents": 0.00043406151235103607,
+        "HourlyMilliCPUCostMicroCents": 3477.21
       },
       {
         "Labels": {
           "kubernetes.io/hostname": "minikube"
         },
-        "HourlyCostMicroCents": 10000000
+        "HourlyMemoryByteCostMicroCents": 0.0002,
+        "HourlyMilliCPUCostMicroCents": 2000
       }
     ]
   },
