@@ -20,8 +20,8 @@ aggregate: build
 		--pubsub-subscription kostanza \
 		--pubsub-topic kostanza \
 		--bigquery-project planet-k8s-staging \
-		--bigquery-table kostanza291106 \
-		--bigquery-dataset kostanza291106
+		--bigquery-table kostanza_12_2018 \
+		--bigquery-dataset kostanza_12_2018
 
 test:
 	go test -v ./...
