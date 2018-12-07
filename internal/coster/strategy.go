@@ -303,6 +303,19 @@ func buildNormalizedNodeResourceMap(pods []*core_v1.Pod, nodes []*core_v1.Node) 
 			v.memoryAvailable = m.MilliValue() / 1000
 		}
 
+		// The ratio of cpuUsed / cpuAvailable is used for proportional scaling of
+		// resources to "normalize" pod resource utilization to a full node. If
+		// cpuUsed is 0 because the pods that are running have not made resource
+		// there's a possible divide by 0 in calling code so we default to setting
+		// cpuUsed to cpuAvailable.
+		if v.cpuUsed == 0 {
+			v.cpuUsed = v.cpuAvailable
+		}
+
+		if v.memoryUsed == 0 {
+			v.memoryUsed = v.memoryAvailable
+		}
+
 		nrm[k] = v
 	}
 
