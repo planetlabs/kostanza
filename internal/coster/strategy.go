@@ -206,7 +206,7 @@ var NodePricingStrategy = PricingStrategyFunc(func(table CostTable, duration tim
 
 		m := n.Status.Capacity.Memory()
 		if m == nil {
-			log.Log.Warnw("could not get node memory :wcapacity, skipping", zap.String("nodeName", n.ObjectMeta.Name))
+			log.Log.Warnw("could not get node memory capacity, skipping", zap.String("nodeName", n.ObjectMeta.Name))
 			continue
 		}
 
