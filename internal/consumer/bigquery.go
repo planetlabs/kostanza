@@ -25,8 +25,8 @@ var (
 	// TagConsumeStatus indicates the success or failure of a consumption
 	TagConsumeStatus, _ = tag.NewKey("status")
 
-	tagStatusSucceded = "succeeded"
-	tagStatusFailed   = "failed"
+	tagStatusSucceeded = "succeeded"
+	tagStatusFailed    = "failed"
 )
 
 func isAlreadyExistsError(err error) bool {
@@ -206,7 +206,7 @@ func (pc *PubsubConsumer) Consume(ctx context.Context) error {
 			}
 
 			msg.Ack()
-			ctx, _ = tag.New(ctx, tag.Upsert(TagConsumeStatus, tagStatusSucceded)) // nolint: gosec
+			ctx, _ = tag.New(ctx, tag.Upsert(TagConsumeStatus, tagStatusSucceeded)) // nolint: gosec
 			stats.Record(ctx, MeasureConsume.M(1))
 			return
 		})
