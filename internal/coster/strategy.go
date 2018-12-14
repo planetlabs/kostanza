@@ -11,7 +11,7 @@ import (
 const (
 	// StrategyNameCPU is used whenever we derive a cost metric using the CPUPricingStrategy.
 	StrategyNameCPU = "CPUPricingStrategy"
-	// StrategyNameCPU is used whenever we derive a cost metric using the MemoryPricingStrategy.
+	// StrategyNameMemory is used whenever we derive a cost metric using the MemoryPricingStrategy.
 	StrategyNameMemory = "MemoryPricingStrategy"
 	// StrategyNameNode is used whenever we derive a cost metric using the NodePricingStrategy.
 	StrategyNameNode = "NodePricingStrategy"
