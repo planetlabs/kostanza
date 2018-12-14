@@ -25,6 +25,7 @@ import (
 	"github.com/pkg/errors"
 	"go.opencensus.io/exporter/prometheus"
 	"go.opencensus.io/stats"
+	"go.opencensus.io/tag"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	core_v1 "k8s.io/api/core/v1"
@@ -47,17 +48,28 @@ var (
 	ResourceCostWeighted = ResourceCostKind("weighted")
 	// ResourceCostNode represents the overall cost of a node.
 	ResourceCostNode = ResourceCostKind("node")
+	// TagStatus indicates the success or failure of an operation.
+	TagStatus, _       = tag.NewKey("status")
+	tagStatusSucceeded = "succeeded"
+	tagStatusFailed    = "failed"
 )
 
 var (
 	// ErrNoPodNode may be returned during races where the pod containing a given
 	// node has disappeared.
 	ErrNoPodNode = errors.New("could not lookup node for pod")
+	// ErrSenselessInterval is returned if the difference since our last run time
+	// is less than 0. Obviously, this should never since time moves forward.
+	ErrSenselessInterval = errors.New("senseless interval since last calculation")
 )
 
 var (
 	// MeasureCost is the stat for tracking costs in millionths of a cent.
 	MeasureCost = stats.Int64("kostanza/measures/cost", "Cost in millionths of a cent", "µ¢")
+	// MeasureCycles is the number of tracking loops conducted.
+	MeasureCycles = stats.Int64("kostanza/measures/cycles", "Iterations executed", stats.UnitDimensionless)
+	// MeasureLag is the discrepancy between the ideal interval and actual interval between calculations.
+	MeasureLag = stats.Float64("kostanza/measures/lag", "Lag time in calculation intervals", stats.UnitMilliseconds)
 )
 
 // Coster is used to calculate and emit metrics for services and components
@@ -119,6 +131,7 @@ type coster struct {
 	prometheusExporter *prometheus.Exporter
 	costExporters      []CostExporter
 	podFilters         PodFilters
+	lastRun            time.Time
 }
 
 func (c *coster) filterPod(p *core_v1.Pod) bool {
@@ -159,8 +172,28 @@ func (c *coster) calculate() ([]CostItem, error) {
 	}
 
 	cis := []CostItem{}
+
+	// Fairly unimpressive cruft to measure lag between our desired interval and
+	// actual interval since the last calculate() call. If this is signficant you
+	// may want to feed the program more cpu.
+	var interval time.Duration
+	if c.lastRun.IsZero() {
+		interval = c.interval
+		c.lastRun = time.Now()
+	} else {
+		t := time.Now()
+		interval = t.Sub(c.lastRun)
+		if interval <= 0 {
+			return nil, ErrSenselessInterval
+		}
+
+		c.lastRun = t
+		lag := float64((interval / time.Millisecond) - (c.interval / time.Millisecond))
+		stats.Record(context.Background(), MeasureLag.M(lag))
+	}
+
 	for _, s := range c.strategies {
-		cis = append(cis, s.Calculate(c.config.Pricing, c.interval, pods, nodes)...)
+		cis = append(cis, s.Calculate(c.config.Pricing, interval, pods, nodes)...)
 	}
 	return cis, nil
 }
@@ -169,6 +202,8 @@ func (c *coster) CalculateAndEmit() error {
 	costs, err := c.calculate()
 	if err != nil {
 		log.Log.Error("failed to calculate pod costs")
+		ctx, _ := tag.New(context.Background(), tag.Upsert(TagStatus, tagStatusFailed)) // nolint: gosec
+		stats.Record(ctx, MeasureCycles.M(1))
 		return err
 	}
 
@@ -190,6 +225,9 @@ func (c *coster) CalculateAndEmit() error {
 			exp.ExportCost(ce)
 		}
 	}
+
+	ctx, _ := tag.New(context.Background(), tag.Upsert(TagStatus, tagStatusSucceeded)) // nolint: gosec
+	stats.Record(ctx, MeasureCycles.M(1))
 
 	return nil
 }

@@ -75,6 +75,22 @@ var (
 		TagKeys:     []tag.Key{},
 	}
 
+	viewCycles = &view.View{
+		Name:        "cycles",
+		Measure:     coster.MeasureCycles,
+		Description: "Total observation cycles.",
+		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{},
+	}
+
+	viewLag = &view.View{
+		Name:        "lag",
+		Measure:     coster.MeasureLag,
+		Description: "Lag time of cost calculation loops.",
+		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{},
+	}
+
 	viewConsume = &view.View{
 		Name:        "consume_consumed_total",
 		Measure:     consumer.MeasureConsume,
@@ -114,7 +130,7 @@ func main() {
 		kingpin.FatalIfError(err, "could not prepare metric tags from mapping")
 
 		viewCosts.TagKeys = append(viewCosts.TagKeys, mk...)
-		kingpin.FatalIfError(view.Register(viewCosts, viewPubsubErrors), "cannot register metrics")
+		kingpin.FatalIfError(view.Register(viewCosts, viewPubsubErrors, viewCycles, viewLag), "cannot register metrics")
 		view.RegisterExporter(p)
 
 		ces := []coster.CostExporter{

@@ -1,0 +1,36 @@
+image: docker:stable
+stages:
+- test
+- publish
+
+services:
+- us.gcr.io/planet-gcr/terraflop/planet-docker:dind
+
+variables:
+  DOCKER_HOST: localhost:2375
+  DOCKER_DRIVER: overlay2
+
+test:
+  stage: test
+  image: golang:1.10
+  before_script:
+    - mkdir -p $GOPATH/src/github.com/jacobstr
+    - ln -s $CI_PROJECT_DIR $GOPATH/src/github.com/jacobstr/kostanza
+    - cd $GOPATH/src/github.com/jacobstr/kostanza
+  tags:
+    - gcp-terraflop
+  script:
+    - go get -u github.com/alecthomas/gometalinter
+    - gometalinter --install
+    - go test -race ./...
+    - gometalinter --fast --deadline 5m --vendor ./...
+
+publish:
+  stage: publish
+  tags:
+    - gcp-terraflop
+  only:
+    - master
+  script:
+    - docker build -t us.gcr.io/planet-gcr/kostanza:${CI_COMMIT_SHA:0:7} .
+    - docker push us.gcr.io/planet-gcr/kostanza:${CI_COMMIT_SHA:0:7}
