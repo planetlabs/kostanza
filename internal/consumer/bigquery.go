@@ -29,8 +29,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 
-	"github.com/jacobstr/kostanza/internal/coster"
-	"github.com/jacobstr/kostanza/internal/log"
+	"github.com/planetlabs/kostanza/internal/coster"
+	"github.com/planetlabs/kostanza/internal/log"
 )
 
 var (

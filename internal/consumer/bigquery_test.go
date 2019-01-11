@@ -20,7 +20,7 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/go-test/deep"
 
-	"github.com/jacobstr/kostanza/internal/coster"
+	"github.com/planetlabs/kostanza/internal/coster"
 )
 
 var mapperToSchemaCases = []struct {

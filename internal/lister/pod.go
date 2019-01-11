@@ -25,7 +25,7 @@ import (
 	listersv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 
-	"github.com/jacobstr/kostanza/internal/log"
+	"github.com/planetlabs/kostanza/internal/log"
 )
 
 const podResyncPeriod = time.Minute * 15

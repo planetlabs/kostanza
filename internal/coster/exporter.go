@@ -29,7 +29,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/jacobstr/kostanza/internal/log"
+	"github.com/planetlabs/kostanza/internal/log"
 )
 
 var (

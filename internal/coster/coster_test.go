@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	testclient "k8s.io/client-go/kubernetes/fake"
 
-	"github.com/jacobstr/kostanza/internal/lister"
+	"github.com/planetlabs/kostanza/internal/lister"
 )
 
 var resourceTestPod = core_v1.Pod{

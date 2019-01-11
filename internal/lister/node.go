@@ -17,7 +17,7 @@ package lister
 import (
 	"time"
 
-	"github.com/jacobstr/kostanza/internal/log"
+	"github.com/planetlabs/kostanza/internal/log"
 	core_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"

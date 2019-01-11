@@ -17,7 +17,7 @@ package coster
 import (
 	"time"
 
-	"github.com/jacobstr/kostanza/internal/log"
+	"github.com/planetlabs/kostanza/internal/log"
 	"go.uber.org/zap"
 	core_v1 "k8s.io/api/core/v1"
 )

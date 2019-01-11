@@ -1,5 +1,5 @@
 FROM golang:1.11-alpine3.8 AS build
-WORKDIR /go/src/github.com/jacobstr/kostanza
+WORKDIR /go/src/github.com/planetlabs/kostanza
 
 # Build indepdently for caching purposes.
 ADD vendor vendor

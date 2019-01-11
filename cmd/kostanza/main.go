@@ -26,10 +26,10 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	client "k8s.io/client-go/kubernetes"
 
-	"github.com/jacobstr/kostanza/internal/consumer"
-	"github.com/jacobstr/kostanza/internal/coster"
-	"github.com/jacobstr/kostanza/internal/kubernetes"
-	"github.com/jacobstr/kostanza/internal/log"
+	"github.com/planetlabs/kostanza/internal/consumer"
+	"github.com/planetlabs/kostanza/internal/coster"
+	"github.com/planetlabs/kostanza/internal/kubernetes"
+	"github.com/planetlabs/kostanza/internal/log"
 )
 
 const name = "kostanza"

@@ -32,8 +32,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/jacobstr/kostanza/internal/lister"
-	"github.com/jacobstr/kostanza/internal/log"
+	"github.com/planetlabs/kostanza/internal/lister"
+	"github.com/planetlabs/kostanza/internal/log"
 )
 
 // ResourceCostKind is used to indidicate what resource a cost was derived from.
