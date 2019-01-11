@@ -22,9 +22,9 @@ jobs:
     - stage: publish
       install: skip
       script:
-        - docker build -t jacobstr/kostanza:${TRAVIS_COMMIT:0:7} .
+        - docker build -t planetlabs/kostanza:${TRAVIS_COMMIT:0:7} .
         - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-        - docker push jacobstr/kostanza:${TRAVIS_COMMIT:0:7}
+        - docker push planetlabs/kostanza:${TRAVIS_COMMIT:0:7}
 
 stages:
   - name: test

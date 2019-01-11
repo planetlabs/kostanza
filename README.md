@@ -1,8 +1,8 @@
 # Kostanza
 
-[![Docker Pulls](https://img.shields.io/docker/pulls/planetlabs/kostanza.svg)](https://hub.docker.com/r/jacobstr/kostanza/)
-[![codecov](https://codecov.io/gh/planetlabs/kostanza/branch/master/graph/badge.svg)](https://codecov.io/gh/jacobstr/kostanza)
-[![Build Status](https://travis-ci.com/planetlabs/kostanza.svg?branch=master)](https://travis-ci.com/jacobstr/kostanza)
+[![Docker Pulls](https://img.shields.io/docker/pulls/planetlabs/kostanza.svg)](https://hub.docker.com/r/planetlabs/kostanza/)
+[![codecov](https://codecov.io/gh/planetlabs/kostanza/branch/master/graph/badge.svg)](https://codecov.io/gh/planetlabs/kostanza)
+[![Build Status](https://travis-ci.com/planetlabs/kostanza.svg?branch=master)](https://travis-ci.com/planetlabs/kostanza)
 
 Kostanza is a service for emitting approximate cost metrics for services
 running in a kubernetes cluster. It works by:
