@@ -236,3 +236,57 @@ func TestRun(t *testing.T) {
 	}()
 	<-ch
 }
+
+var benchmarkCases = []struct {
+	name   string
+	pods   []*core_v1.Pod
+	nodes  []*core_v1.Node
+	config *Config
+}{
+	{
+		name:  "single container pod on a node using a single cpu",
+		pods:  []*core_v1.Pod{testCalculationPod},
+		nodes: []*core_v1.Node{testCalculationNode},
+		config: &Config{
+			Pricing: CostTable{
+				Entries: []*CostTableEntry{
+					&CostTableEntry{
+						Labels: calculateTestNodeLabels,
+						HourlyMilliCPUCostMicroCents: 1000,
+					},
+				},
+			},
+		},
+	},
+}
+
+func BenchmarkCalculate(b *testing.B) {
+	for _, tt := range benchmarkCases {
+		b.Run(tt.name, func(b *testing.B) {
+			pro, err := prometheus.NewExporter(prometheus.Options{})
+			if err != nil {
+				b.Fatalf("could not get prometheus exporter %v", err)
+			}
+
+			nodl := lister.FakeNodeLister{Nodes: tt.nodes}
+			podl := lister.FakePodLister{Pods: tt.pods}
+
+			c := &coster{
+				interval:           time.Hour,
+				ticker:             time.NewTicker(time.Hour),
+				prometheusExporter: pro,
+				listenAddr:         ":5000",
+				nodeLister:         &nodl,
+				podLister:          &podl,
+				config:             tt.config,
+				strategies:         []PricingStrategy{CPUPricingStrategy},
+			}
+
+			for n := 0; n < b.N; n++ {
+				if _, err := c.calculate(); err != nil {
+					b.Fatalf("benchmark failed: %v", err)
+				}
+			}
+		})
+	}
+}
