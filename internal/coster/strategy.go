@@ -20,6 +20,7 @@ import (
 	"github.com/planetlabs/kostanza/internal/log"
 	"go.uber.org/zap"
 	core_v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -31,6 +32,10 @@ const (
 	StrategyNameNode = "NodePricingStrategy"
 	// StrategyNameWeighted is used whenever we derive a cost metric using the WeightedPricingStrategy.
 	StrategyNameWeighted = "WeightedPricingStrategy"
+	// StrategyNameGPU is used whenever we derive a cost metric using the GPUPricingStrategy.
+	StrategyNameGPU = "GPUPricingStrategy"
+	// ResourceGPU is used for gpu resources, coinciding with modern versions of the nvidia-device-plugin.
+	ResourceGPU = core_v1.ResourceName("nvidia.com/gpu")
 )
 
 // CostItem models the metadata associated with a pod and/or node cost.
@@ -69,9 +74,36 @@ type PricingStrategy interface {
 type allocatedNodeResources struct {
 	cpuUsed         int64
 	memoryUsed      int64
+	gpuUsed         int64
 	cpuAvailable    int64
+	gpuAvailable    int64
 	memoryAvailable int64
 	node            *core_v1.Node
+}
+
+func (nr allocatedNodeResources) CPUScale() float64 {
+	return float64(nr.cpuAvailable) / float64(nr.cpuUsed)
+}
+
+func (nr allocatedNodeResources) MemoryScale() float64 {
+	return float64(nr.memoryAvailable) / float64(nr.memoryUsed)
+}
+
+func (nr allocatedNodeResources) GPUScale() float64 {
+	if nr.gpuUsed == 0 {
+		return 0
+	}
+	return float64(nr.gpuAvailable) / float64(nr.gpuUsed)
+}
+
+// gpuCapacity mirrors the definitions of ResourceList.Memory and
+// ResourceList.CPU in k8s client-go and provides equivalent functionality for
+// GPU capacity.
+func gpuCapacity(self *core_v1.ResourceList) *resource.Quantity {
+	if val, ok := (*self)[ResourceGPU]; ok {
+		return &val
+	}
+	return &resource.Quantity{Format: resource.DecimalSI}
 }
 
 // CPUPricingStrategy calculates the cost of a pod based strictly on it's share
@@ -150,6 +182,48 @@ var MemoryPricingStrategy = PricingStrategyFunc(func(table CostTable, duration t
 	return cis
 })
 
+// GPUPricingStrategy generates cost metrics that account for the cost of GPUs consumed by pods.
+var GPUPricingStrategy = PricingStrategyFunc(func(table CostTable, duration time.Duration, pods []*core_v1.Pod, nodes []*core_v1.Node) []CostItem {
+	nm := buildNodeMap(nodes)
+	cis := []CostItem{}
+	for _, p := range pods {
+		gpu := sumPodResource(p, ResourceGPU)
+		node, ok := nm[p.Spec.NodeName]
+
+		if gpu == 0 {
+			log.Log.Debugw("skipping pod that does not utilize gpu", zap.String("pod", p.ObjectMeta.Name))
+			continue
+		}
+
+		if !ok {
+			log.Log.Warnw("could not find nodeResourceMap for node", zap.String("nodeName", p.Spec.NodeName))
+			continue
+		}
+
+		te, err := table.FindByLabels(node.Labels)
+		if err != nil {
+			log.Log.Warnw("could not find pricing entry for node", zap.String("nodeName", node.ObjectMeta.Name))
+			continue
+		}
+
+		ci := CostItem{
+			Kind:     ResourceCostGPU,
+			Value:    te.GPUCostMicroCents(float64(gpu), duration),
+			Pod:      p,
+			Node:     node,
+			Strategy: StrategyNameGPU,
+		}
+		log.Log.Debugw(
+			"generated cost item",
+			zap.String("pod", ci.Pod.ObjectMeta.Name),
+			zap.String("strategy", ci.Strategy),
+			zap.Int64("value", ci.Value),
+		)
+		cis = append(cis, ci)
+	}
+	return cis
+})
+
 // WeightedPricingStrategy calculates the cost of a pod based on it's average use of the
 // CPU and Memory requests as a fraction of all CPU and memory requests on the node onto
 // which it has been allocated. This strategy ensures that unallocated resources do not
@@ -161,6 +235,7 @@ var WeightedPricingStrategy = PricingStrategyFunc(func(table CostTable, duration
 	for _, p := range pods {
 		cpu := sumPodResource(p, core_v1.ResourceCPU)
 		mem := sumPodResource(p, core_v1.ResourceMemory)
+		gpu := sumPodResource(p, ResourceGPU)
 
 		nr, ok := nrm[p.Spec.NodeName]
 		if !ok {
@@ -174,17 +249,15 @@ var WeightedPricingStrategy = PricingStrategyFunc(func(table CostTable, duration
 			continue
 		}
 
-		// We "normalize" cpu and memory utilization by scaling the utilized cpu and memory
-		// of pods by the utilization of the the respective resources on the node.
-		cpuscale := float64(nr.cpuAvailable) / float64(nr.cpuUsed)
-		memscale := float64(nr.memoryAvailable) / float64(nr.memoryUsed)
-
-		cpucost := te.CPUCostMicroCents(float64(cpu)*cpuscale, duration)
-		memcost := te.MemoryCostMicroCents(float64(mem)*memscale, duration)
+		// We "normalize" cpu, memory, and gpu utilization by scaling the utilized resources
+		// of pods by the global utilization of the respective resource on the node.
+		cpucost := te.CPUCostMicroCents(float64(cpu)*nr.CPUScale(), duration)
+		memcost := te.MemoryCostMicroCents(float64(mem)*nr.MemoryScale(), duration)
+		gpucost := te.GPUCostMicroCents(float64(gpu)*nr.GPUScale(), duration)
 
 		ci := CostItem{
 			Kind:     ResourceCostWeighted,
-			Value:    cpucost + memcost,
+			Value:    cpucost + memcost + gpucost,
 			Pod:      p,
 			Node:     nr.node,
 			Strategy: StrategyNameWeighted,
@@ -227,9 +300,14 @@ var NodePricingStrategy = PricingStrategyFunc(func(table CostTable, duration tim
 		memcost := te.MemoryCostMicroCents(float64(m.MilliValue())/1000, duration)
 		cpucost := te.CPUCostMicroCents(float64(c.MilliValue()), duration)
 
+		gpucost := int64(0)
+		if g := gpuCapacity(&n.Status.Capacity); g != nil {
+			gpucost = te.GPUCostMicroCents(float64(g.Value()), duration)
+		}
+
 		ci := CostItem{
 			Kind:     ResourceCostNode,
-			Value:    memcost + cpucost,
+			Value:    memcost + cpucost + gpucost,
 			Node:     n,
 			Strategy: StrategyNameNode,
 		}
@@ -249,20 +327,24 @@ var NodePricingStrategy = PricingStrategyFunc(func(table CostTable, duration tim
 // the kind chosen:
 // 	- cpu: The number of millicpus. 1 cpu is 1000.
 //  - memory: The number of bytes.
+//  - nvidia.com/gpu: The number of gpu units regardless of model.
 func sumPodResource(p *core_v1.Pod, kind core_v1.ResourceName) int64 {
 	total := int64(0)
 	for _, c := range p.Spec.Containers {
 		res, ok := c.Resources.Requests[kind]
-		if ok {
+		if !ok {
+			continue
+		}
+
+		if kind == core_v1.ResourceMemory {
+			total = total + (&res).Value()
+		} else if kind == ResourceGPU {
+			total = total + (&res).Value()
+		} else {
 			total = total + (&res).MilliValue()
 		}
 	}
 
-	// The millivalue for memory is given in thousandths of bytes, which is a goofy
-	// number for anyone calling this function.
-	if kind == core_v1.ResourceMemory {
-		return total / 1000
-	}
 	return total
 }
 
@@ -282,7 +364,7 @@ func buildNodeMap(nodes []*core_v1.Node) nodeMap {
 // e.g. my pod uses 500 cpu
 // the node has 1 cpu
 // my pod is the only pod on the node, and total nod resources are 500
-func buildNormalizedNodeResourceMap(pods []*core_v1.Pod, nodes []*core_v1.Node) nodeResourceMap {
+func buildNormalizedNodeResourceMap(pods []*core_v1.Pod, nodes []*core_v1.Node) nodeResourceMap { // nolint: gocyclo
 	nrm := nodeResourceMap{}
 
 	for _, n := range nodes {
@@ -303,6 +385,7 @@ func buildNormalizedNodeResourceMap(pods []*core_v1.Pod, nodes []*core_v1.Node) 
 		}
 		nr.cpuUsed += sumPodResource(p, core_v1.ResourceCPU)
 		nr.memoryUsed += sumPodResource(p, core_v1.ResourceMemory)
+		nr.gpuUsed += sumPodResource(p, ResourceGPU)
 		nrm[p.Spec.NodeName] = nr
 	}
 
@@ -314,20 +397,29 @@ func buildNormalizedNodeResourceMap(pods []*core_v1.Pod, nodes []*core_v1.Node) 
 
 		m := v.node.Status.Capacity.Memory()
 		if m != nil {
-			v.memoryAvailable = m.MilliValue() / 1000
+			v.memoryAvailable = m.Value()
+		}
+
+		g := gpuCapacity(&v.node.Status.Capacity)
+		if g != nil {
+			v.gpuAvailable = g.Value()
 		}
 
 		// The ratio of cpuUsed / cpuAvailable is used for proportional scaling of
 		// resources to "normalize" pod resource utilization to a full node. If
 		// cpuUsed is 0 because the pods that are running have not made resource
-		// there's a possible divide by 0 in calling code so we default to setting
-		// cpuUsed to cpuAvailable.
+		// requests, there's a possible divide by 0 in calling code so we default to
+		// setting cpuUsed to cpuAvailable.
 		if v.cpuUsed == 0 {
 			v.cpuUsed = v.cpuAvailable
 		}
 
 		if v.memoryUsed == 0 {
 			v.memoryUsed = v.memoryAvailable
+		}
+
+		if v.gpuUsed == 0 {
+			v.gpuUsed = v.gpuAvailable
 		}
 
 		nrm[k] = v

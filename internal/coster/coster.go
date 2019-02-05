@@ -44,6 +44,9 @@ var (
 	ResourceCostCPU = ResourceCostKind("cpu")
 	// ResourceCostMemory is a cost metric derived from memory utilization.
 	ResourceCostMemory = ResourceCostKind("memory")
+	// ResourceCostGPU is a cost metric derived from GPU utilization. At the present
+	// time kostanza assumes all GPU's in your cluster are homogenous.
+	ResourceCostGPU = ResourceCostKind("gpu")
 	// ResourceCostWeighted is a cost metric derived from a weighted average of memory and cpu utilization.
 	ResourceCostWeighted = ResourceCostKind("weighted")
 	// ResourceCostNode represents the overall cost of a node.
@@ -115,7 +118,7 @@ func NewKubernetesCoster(
 		prometheusExporter: prometheusExporter,
 		costExporters:      costExporters,
 		listenAddr:         listenAddr,
-		strategies:         []PricingStrategy{CPUPricingStrategy, MemoryPricingStrategy, WeightedPricingStrategy, NodePricingStrategy},
+		strategies:         []PricingStrategy{GPUPricingStrategy, CPUPricingStrategy, MemoryPricingStrategy, WeightedPricingStrategy, NodePricingStrategy},
 		podFilters:         PodFilters{RunningPodFilter},
 	}, nil
 }

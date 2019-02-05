@@ -44,6 +44,7 @@ type CostTableEntry struct {
 	Labels                         Labels
 	HourlyMemoryByteCostMicroCents float64
 	HourlyMilliCPUCostMicroCents   float64
+	HourlyGPUCostMicroCents        float64
 }
 
 // Match returns true if all of the CostTableEntry's labels match some subeset
@@ -84,6 +85,13 @@ func (e *CostTableEntry) CPUCostMicroCents(millicpu float64, duration time.Durat
 func (e *CostTableEntry) MemoryCostMicroCents(membytes float64, duration time.Duration) int64 {
 	durfrac := float64(duration) / float64(time.Hour)
 	return int64(membytes * durfrac * float64(e.HourlyMemoryByteCostMicroCents))
+}
+
+// GPUCostMicroCents returns the cost of the provided number of gpus over a
+// given duration in millionths of a cent.
+func (e *CostTableEntry) GPUCostMicroCents(gpus float64, duration time.Duration) int64 {
+	durfrac := float64(duration) / float64(time.Hour)
+	return int64(gpus * durfrac * float64(e.HourlyGPUCostMicroCents))
 }
 
 // CostTable is a collection of CostTableEntries, generally used to look up pricing

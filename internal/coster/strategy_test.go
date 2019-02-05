@@ -61,6 +61,20 @@ var (
 			},
 		},
 	}
+	testStrategyPodGPU = &core_v1.Pod{
+		Spec: core_v1.PodSpec{
+			NodeName: strategyTestNodeName,
+			Containers: []core_v1.Container{
+				core_v1.Container{
+					Resources: core_v1.ResourceRequirements{
+						Requests: core_v1.ResourceList{
+							"nvidia.com/gpu": resource.MustParse("1"),
+						},
+					},
+				},
+			},
+		},
+	}
 )
 
 var testStrategyNode = &core_v1.Node{
@@ -76,12 +90,26 @@ var testStrategyNode = &core_v1.Node{
 	},
 }
 
+var testStrategyNodeGPU = &core_v1.Node{
+	ObjectMeta: metav1.ObjectMeta{
+		Name:   strategyTestNodeName,
+		Labels: strategyTestNodeLabels,
+	},
+	Status: core_v1.NodeStatus{
+		Capacity: core_v1.ResourceList{
+			"cpu":            resource.MustParse("1"),
+			"nvidia.com/gpu": resource.MustParse("1"),
+		},
+	},
+}
+
 var testStrategyCostTable = CostTable{
 	Entries: []*CostTableEntry{
 		&CostTableEntry{
 			Labels: strategyTestNodeLabels,
 			HourlyMilliCPUCostMicroCents:   1000,
 			HourlyMemoryByteCostMicroCents: 1,
+			HourlyGPUCostMicroCents:        7000000,
 		},
 	},
 }
@@ -197,6 +225,94 @@ var testCPUStrategyCases = []struct {
 
 func TestCPUStrategyCalculations(t *testing.T) {
 	for _, tt := range testCPUStrategyCases {
+		t.Run(tt.name, func(t *testing.T) {
+			ci := tt.strategy.Calculate(tt.table, tt.duration, tt.pods, tt.nodes)
+			if diff := deep.Equal(ci, tt.expectedCostItems); diff != nil {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+var testGPUStrategyCases = []struct {
+	name              string
+	pods              []*core_v1.Pod
+	nodes             []*core_v1.Node
+	table             CostTable
+	duration          time.Duration
+	strategy          PricingStrategy
+	expectedCostItems []CostItem
+}{
+	{
+		name:              "GPUPricingStrategy Pod with no GPU on node without GPUs contains no entries",
+		pods:              []*core_v1.Pod{testStrategyPodA},
+		nodes:             []*core_v1.Node{testStrategyNode},
+		table:             testStrategyCostTable,
+		duration:          time.Hour,
+		strategy:          GPUPricingStrategy,
+		expectedCostItems: []CostItem{},
+	},
+	{
+		name:     "GPUPricingStrategy for a pod on a node with GPU",
+		pods:     []*core_v1.Pod{testStrategyPodGPU},
+		nodes:    []*core_v1.Node{testStrategyNodeGPU},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: GPUPricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    7000000,
+				Kind:     ResourceCostGPU,
+				Pod:      testStrategyPodGPU,
+				Node:     testStrategyNodeGPU,
+				Strategy: StrategyNameGPU,
+			},
+		},
+	},
+	{
+		name:     "WeightedPricingStrategy with a GPU pod.",
+		pods:     []*core_v1.Pod{testStrategyPodA, testStrategyPodGPU},
+		nodes:    []*core_v1.Node{testStrategyNodeGPU},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: WeightedPricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    1000000,
+				Kind:     ResourceCostWeighted,
+				Pod:      testStrategyPodA,
+				Node:     testStrategyNodeGPU,
+				Strategy: StrategyNameWeighted,
+			},
+			CostItem{
+				Value:    7000000,
+				Kind:     ResourceCostWeighted,
+				Pod:      testStrategyPodGPU,
+				Node:     testStrategyNodeGPU,
+				Strategy: StrategyNameWeighted,
+			},
+		},
+	},
+	{
+		name:     "NodePricingStrategy with a GPU node.",
+		pods:     []*core_v1.Pod{},
+		nodes:    []*core_v1.Node{testStrategyNodeGPU},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: NodePricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    1000000 + 7000000,
+				Kind:     ResourceCostNode,
+				Node:     testStrategyNodeGPU,
+				Strategy: StrategyNameNode,
+			},
+		},
+	},
+}
+
+func TestGPUStrategyCalculations(t *testing.T) {
+	for _, tt := range testGPUStrategyCases {
 		t.Run(tt.name, func(t *testing.T) {
 			ci := tt.strategy.Calculate(tt.table, tt.duration, tt.pods, tt.nodes)
 			if diff := deep.Equal(ci, tt.expectedCostItems); diff != nil {
