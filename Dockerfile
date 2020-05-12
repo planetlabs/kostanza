@@ -1,4 +1,4 @@
-FROM golang:1.11-alpine3.8 AS build
+FROM golang:1.14-alpine3.8 AS build
 WORKDIR /go/src/github.com/planetlabs/kostanza
 
 # Build indepdently for caching purposes.
