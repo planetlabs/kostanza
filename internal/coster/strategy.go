@@ -82,10 +82,16 @@ type allocatedNodeResources struct {
 }
 
 func (nr allocatedNodeResources) CPUScale() float64 {
+	if nr.cpuUsed == 0 {
+		return 0
+	}
 	return float64(nr.cpuAvailable) / float64(nr.cpuUsed)
 }
 
 func (nr allocatedNodeResources) MemoryScale() float64 {
+	if nr.memoryUsed == 0 {
+		return 0
+	}
 	return float64(nr.memoryAvailable) / float64(nr.memoryUsed)
 }
 
