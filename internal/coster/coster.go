@@ -137,15 +137,6 @@ type coster struct {
 	lastRun            time.Time
 }
 
-func (c *coster) filterPod(p *core_v1.Pod) bool {
-	for _, f := range c.podFilters {
-		if f(p) {
-			return true
-		}
-	}
-	return false
-}
-
 func (c *coster) applyPodFilters(pods []*core_v1.Pod) []*core_v1.Pod {
 	ret := []*core_v1.Pod{}
 	for _, p := range pods {

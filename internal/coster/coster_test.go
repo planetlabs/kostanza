@@ -151,7 +151,7 @@ var calculateCases = []struct {
 			Pricing: CostTable{
 				Entries: []*CostTableEntry{
 					&CostTableEntry{
-						Labels: calculateTestNodeLabels,
+						Labels:                       calculateTestNodeLabels,
 						HourlyMilliCPUCostMicroCents: 1000,
 					},
 				},
@@ -224,10 +224,12 @@ func TestRun(t *testing.T) {
 
 	ch := make(chan struct{})
 	ctx, done := context.WithCancel(context.Background())
+	errs := make(chan error, 1)
 	go func() {
+		defer close(errs)
 		defer close(ch)
 		if err := c.Run(ctx); err != nil && err != http.ErrServerClosed {
-			t.Fatal(err)
+			errs <- err
 		}
 	}()
 	go func() {
@@ -235,6 +237,11 @@ func TestRun(t *testing.T) {
 		done()
 	}()
 	<-ch
+
+	err = <-errs
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 var benchmarkCases = []struct {
@@ -251,7 +258,7 @@ var benchmarkCases = []struct {
 			Pricing: CostTable{
 				Entries: []*CostTableEntry{
 					&CostTableEntry{
-						Labels: calculateTestNodeLabels,
+						Labels:                       calculateTestNodeLabels,
 						HourlyMilliCPUCostMicroCents: 1000,
 					},
 				},
