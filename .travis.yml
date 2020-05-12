@@ -4,18 +4,15 @@ services:
   - docker
 
 go:
-  - 1.11.x
+  - 1.14.x
 
 jobs:
   include:
     - stage: test
-      before_install:
-        - go get -u github.com/alecthomas/gometalinter
-      install:
-         - gometalinter --install
       script:
         - go test -race -coverprofile=coverage.txt -covermode=atomic ./...
-        - gometalinter --fast --deadline 5m --vendor ./...
+        - wget -O- -nv https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s v1.26.0
+        - ./bin/golangci-lint run --timeout 5m
       after_success:
         - bash <(curl -s https://codecov.io/bash)
 

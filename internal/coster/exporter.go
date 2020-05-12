@@ -81,7 +81,6 @@ func (sce *StatsCostExporter) mapTags(cd CostData) (context.Context, error) {
 
 // PubsubCostExporter emits data to pubsub.
 type PubsubCostExporter struct {
-	mapper *Mapper
 	client *pubsub.Client
 	topic  *pubsub.Topic
 	ctx    context.Context

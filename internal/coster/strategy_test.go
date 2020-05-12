@@ -61,6 +61,16 @@ var (
 			},
 		},
 	}
+	testStrategyPodNoResources = &core_v1.Pod{
+		Spec: core_v1.PodSpec{
+			NodeName: strategyTestNodeName,
+			Containers: []core_v1.Container{
+				core_v1.Container{
+					Resources: core_v1.ResourceRequirements{},
+				},
+			},
+		},
+	}
 	testStrategyPodGPU = &core_v1.Pod{
 		Spec: core_v1.PodSpec{
 			NodeName: strategyTestNodeName,
@@ -69,6 +79,20 @@ var (
 					Resources: core_v1.ResourceRequirements{
 						Requests: core_v1.ResourceList{
 							"nvidia.com/gpu": resource.MustParse("1"),
+						},
+					},
+				},
+			},
+		},
+	}
+	testStrategyPodTwoGPU = &core_v1.Pod{
+		Spec: core_v1.PodSpec{
+			NodeName: strategyTestNodeName,
+			Containers: []core_v1.Container{
+				core_v1.Container{
+					Resources: core_v1.ResourceRequirements{
+						Requests: core_v1.ResourceList{
+							"nvidia.com/gpu": resource.MustParse("2"),
 						},
 					},
 				},
@@ -103,10 +127,23 @@ var testStrategyNodeGPU = &core_v1.Node{
 	},
 }
 
+var testStrategyNodeMultiGPU = &core_v1.Node{
+	ObjectMeta: metav1.ObjectMeta{
+		Name:   strategyTestNodeName,
+		Labels: strategyTestNodeLabels,
+	},
+	Status: core_v1.NodeStatus{
+		Capacity: core_v1.ResourceList{
+			"cpu":            resource.MustParse("1"),
+			"nvidia.com/gpu": resource.MustParse("2"),
+		},
+	},
+}
+
 var testStrategyCostTable = CostTable{
 	Entries: []*CostTableEntry{
 		&CostTableEntry{
-			Labels: strategyTestNodeLabels,
+			Labels:                         strategyTestNodeLabels,
 			HourlyMilliCPUCostMicroCents:   1000,
 			HourlyMemoryByteCostMicroCents: 1,
 			HourlyGPUCostMicroCents:        7000000,
@@ -135,6 +172,23 @@ var testCPUStrategyCases = []struct {
 				Value:    500000,
 				Kind:     ResourceCostCPU,
 				Pod:      testStrategyPodA,
+				Node:     testStrategyNode,
+				Strategy: StrategyNameCPU,
+			},
+		},
+	},
+	{
+		name:     "Happy day CPUPricingStrategy with a non-resource limited pod.",
+		pods:     []*core_v1.Pod{testStrategyPodNoResources},
+		nodes:    []*core_v1.Node{testStrategyNode},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: CPUPricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    0,
+				Kind:     ResourceCostCPU,
+				Pod:      testStrategyPodNoResources,
 				Node:     testStrategyNode,
 				Strategy: StrategyNameCPU,
 			},
@@ -182,6 +236,23 @@ var testCPUStrategyCases = []struct {
 		},
 	},
 	{
+		name:     "Happy day MemoryPricingStrategy with a non-resource limited pod.",
+		pods:     []*core_v1.Pod{testStrategyPodNoResources},
+		nodes:    []*core_v1.Node{testStrategyNode},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: MemoryPricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    0,
+				Kind:     ResourceCostMemory,
+				Pod:      testStrategyPodNoResources,
+				Node:     testStrategyNode,
+				Strategy: StrategyNameMemory,
+			},
+		},
+	},
+	{
 		name:     "Happy day WeightedPricingStrategy with two pods.",
 		pods:     []*core_v1.Pod{testStrategyPodA, testStrategyPodB},
 		nodes:    []*core_v1.Node{testStrategyNode},
@@ -200,6 +271,23 @@ var testCPUStrategyCases = []struct {
 				Value:    537204245,
 				Kind:     ResourceCostWeighted,
 				Pod:      testStrategyPodB,
+				Node:     testStrategyNode,
+				Strategy: StrategyNameWeighted,
+			},
+		},
+	},
+	{
+		name:     "Happy day WeightedPricingStrategy with no resource pod",
+		pods:     []*core_v1.Pod{testStrategyPodNoResources},
+		nodes:    []*core_v1.Node{testStrategyNode},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: WeightedPricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    0,
+				Kind:     ResourceCostWeighted,
+				Pod:      testStrategyPodNoResources,
 				Node:     testStrategyNode,
 				Strategy: StrategyNameWeighted,
 			},
@@ -264,6 +352,23 @@ var testGPUStrategyCases = []struct {
 				Value:    7000000,
 				Kind:     ResourceCostGPU,
 				Pod:      testStrategyPodGPU,
+				Node:     testStrategyNodeMultiGPU,
+				Strategy: StrategyNameGPU,
+			},
+		},
+	},
+	{
+		name:     "GPUPricingStrategy for a pod on a node with multi GPU",
+		pods:     []*core_v1.Pod{testStrategyPodGPU},
+		nodes:    []*core_v1.Node{testStrategyNodeMultiGPU},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: GPUPricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    7000000,
+				Kind:     ResourceCostGPU,
+				Pod:      testStrategyPodGPU,
 				Node:     testStrategyNodeGPU,
 				Strategy: StrategyNameGPU,
 			},
@@ -294,6 +399,23 @@ var testGPUStrategyCases = []struct {
 		},
 	},
 	{
+		name:     "WeightedPricingStrategy with a multi GPU pod.",
+		pods:     []*core_v1.Pod{testStrategyPodTwoGPU},
+		nodes:    []*core_v1.Node{testStrategyNodeMultiGPU},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: WeightedPricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    14000000,
+				Kind:     ResourceCostWeighted,
+				Pod:      testStrategyPodTwoGPU,
+				Node:     testStrategyNodeMultiGPU,
+				Strategy: StrategyNameWeighted,
+			},
+		},
+	},
+	{
 		name:     "NodePricingStrategy with a GPU node.",
 		pods:     []*core_v1.Pod{},
 		nodes:    []*core_v1.Node{testStrategyNodeGPU},
@@ -303,6 +425,22 @@ var testGPUStrategyCases = []struct {
 		expectedCostItems: []CostItem{
 			CostItem{
 				Value:    1000000 + 7000000,
+				Kind:     ResourceCostNode,
+				Node:     testStrategyNodeGPU,
+				Strategy: StrategyNameNode,
+			},
+		},
+	},
+	{
+		name:     "NodePricingStrategy with a multi GPU node.",
+		pods:     []*core_v1.Pod{},
+		nodes:    []*core_v1.Node{testStrategyNodeMultiGPU},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: NodePricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    1000000 + 14000000,
 				Kind:     ResourceCostNode,
 				Node:     testStrategyNodeGPU,
 				Strategy: StrategyNameNode,
