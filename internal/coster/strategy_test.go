@@ -61,6 +61,16 @@ var (
 			},
 		},
 	}
+	testStrategyPodNoResources = &core_v1.Pod{
+		Spec: core_v1.PodSpec{
+			NodeName: strategyTestNodeName,
+			Containers: []core_v1.Container{
+				core_v1.Container{
+					Resources: core_v1.ResourceRequirements{},
+				},
+			},
+		},
+	}
 	testStrategyPodGPU = &core_v1.Pod{
 		Spec: core_v1.PodSpec{
 			NodeName: strategyTestNodeName,
@@ -168,6 +178,23 @@ var testCPUStrategyCases = []struct {
 		},
 	},
 	{
+		name:     "Happy day CPUPricingStrategy with a non-resource limited pod.",
+		pods:     []*core_v1.Pod{testStrategyPodNoResources},
+		nodes:    []*core_v1.Node{testStrategyNode},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: CPUPricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    0,
+				Kind:     ResourceCostCPU,
+				Pod:      testStrategyPodNoResources,
+				Node:     testStrategyNode,
+				Strategy: StrategyNameCPU,
+			},
+		},
+	},
+	{
 		name:     "Happy day CPUPricingStrategy with two pods.",
 		pods:     []*core_v1.Pod{testStrategyPodA, testStrategyPodB},
 		nodes:    []*core_v1.Node{testStrategyNode},
@@ -209,6 +236,23 @@ var testCPUStrategyCases = []struct {
 		},
 	},
 	{
+		name:     "Happy day MemoryPricingStrategy with a non-resource limited pod.",
+		pods:     []*core_v1.Pod{testStrategyPodNoResources},
+		nodes:    []*core_v1.Node{testStrategyNode},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: MemoryPricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    0,
+				Kind:     ResourceCostMemory,
+				Pod:      testStrategyPodNoResources,
+				Node:     testStrategyNode,
+				Strategy: StrategyNameMemory,
+			},
+		},
+	},
+	{
 		name:     "Happy day WeightedPricingStrategy with two pods.",
 		pods:     []*core_v1.Pod{testStrategyPodA, testStrategyPodB},
 		nodes:    []*core_v1.Node{testStrategyNode},
@@ -227,6 +271,23 @@ var testCPUStrategyCases = []struct {
 				Value:    537204245,
 				Kind:     ResourceCostWeighted,
 				Pod:      testStrategyPodB,
+				Node:     testStrategyNode,
+				Strategy: StrategyNameWeighted,
+			},
+		},
+	},
+	{
+		name:     "Happy day WeightedPricingStrategy with no resource pod",
+		pods:     []*core_v1.Pod{testStrategyPodNoResources},
+		nodes:    []*core_v1.Node{testStrategyNode},
+		table:    testStrategyCostTable,
+		duration: time.Hour,
+		strategy: WeightedPricingStrategy,
+		expectedCostItems: []CostItem{
+			CostItem{
+				Value:    0,
+				Kind:     ResourceCostWeighted,
+				Pod:      testStrategyPodNoResources,
 				Node:     testStrategyNode,
 				Strategy: StrategyNameWeighted,
 			},
